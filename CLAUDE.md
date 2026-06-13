@@ -20,40 +20,72 @@ som axios speiler tilbake automatisk).
 composer install && npm install
 php artisan migrate
 php artisan app:set-password "<ditt-passord>"   # setter APP_PASSWORD_HASH i .env
-npm run dev          # Vite (terminal 1)
-php artisan serve    # Laravel (terminal 2)  → http://127.0.0.1:8000
+composer dev   # starter serve + Vite + queue:listen + pail samtidig
 ```
 
+`composer dev` inkluderer en kø-arbeider, som trengs fordi banksynk kjøres som
+en køet jobb. Kjører du bare `php artisan serve` blir synk-jobben liggende i kø.
+
 Test: `php artisan test`
+
+## Kjøre i prod
+
+Køet synk + scheduler krever to ting på serveren (ingen Redis nødvendig — `database`-driver):
+
+- **Cron:** `* * * * * cd /sti/til/app && php artisan schedule:run >> /dev/null 2>&1`
+- **Kø-arbeider** under Supervisor/systemd: `php artisan queue:work --tries=3 --max-time=3600`
+
+Scheduleren kjører nattlig banksynk og postering av planlagte transaksjoner (se `routes/console.php`).
 
 ## Struktur
 
 - `routes/web.php` — `/api/*`-ruter + SPA catch-all
-- `app/Http/Controllers/AuthController.php` — login/logout/me
+- `routes/console.php` — scheduler (nattlig banksynk-jobb + `transactions:post-due`)
+- `app/Http/Controllers/` — Auth, Account, Transaction, Budget, Category, CategoryGroup,
+  Goal, ScheduledTransaction, Bank, Rule, Settings
 - `app/Http/Middleware/Authenticated.php` — alias `auth.session`, beskytter API-ruter
-- `app/Console/Commands/SetPassword.php` — `php artisan app:set-password`
-- `resources/js/` — React-SPA (`app.tsx` entry, `App.tsx` ruter, `pages/`, `lib/api.ts`, `auth.tsx`)
+- `app/Http/Middleware/EnsureScheduledTransactionsPosted.php` — posterer forfalte planlagte ved hvert API-kall
+- `app/Services/Bank/` — `BankDataProvider`-grensesnitt, `GoCardlessProvider`,
+  `NormalizedTransaction`-DTO, `BankSyncService`, `Mapping/` (per-bank feltmapping)
+- `app/Services/Rules/` — `RuleEngine`, `RuleResult`, `ReapplyRules` (leverandøruavhengig)
+- `app/Services/` — `BudgetService` (beregner available/RTA), `GoalService`, `ScheduledTransactionService`
+- `app/Jobs/SyncBankTransactionsJob.php` — køet banksynk (WithoutOverlapping)
+- `app/Support/AppSettings.php` — brukerstyrte innstillinger (nøkkel/verdi)
+- `app/Enums/` — `AccountType`, `GoalType`, `ScheduleFrequency`, `RuleApplies`
+- `app/Console/Commands/` — `SetPassword`, `SyncBankTransactions` (`bank:sync`),
+  `PostDueScheduledTransactions`, `ReapplyRules` (`rules:reapply`)
+- `resources/js/` — React-SPA (`app.tsx` entry, `Root.tsx` ruter, `pages/`, `components/`,
+  `lib/api.ts`, `lib/data.ts`, `auth.tsx`)
 - `resources/views/app.blade.php` — SPA-skall
 
 ## Arkitektur-prinsipper
 
-- **Bankleverandør bak abstraksjon:** all aggregator-tilgang (GoCardless osv.) skal gå via et
+- **Bankleverandør bak abstraksjon:** all aggregator-tilgang (GoCardless osv.) går via et
   `BankDataProvider`-grensesnitt → normalisert `NormalizedTransaction`-DTO → per-bank
-  feltmapping → regelmotor (payee + kategori). Ny leverandør = ny klasse, ingen endring i
-  budsjettlogikk. Mønsteret er portet fra den eksisterende referanse-appen (GoCardless).
-- **Kun NOK** i første omgang.
+  feltmapping. Ny leverandør = ny klasse (bind i `AppServiceProvider`), ingen endring i
+  budsjett-/synklogikk. Mønsteret er portet fra referanse-appen.
+- **Regelmotor er leverandøruavhengig:** `RuleEngine` tar info-teksten (`bank_description`)
+  + beløp og setter payee/memo/kategori. Anvendes ved import og på et avgrenset, brukervalgt
+  sett på kontosiden — aldri globalt. Manuelt redigerte rader er `locked` og overskrives aldri.
+- **«available» lagres aldri** — beregnes kumulativt (assigned + activity) i `BudgetService`,
+  så redigering av historikk alltid gir korrekte tall. Samme for `needed` (mål) og kommende/
+  projisert (planlagte poster).
+- **Banksynk:** deduplisering per `account_id:external_id` (samme external_id kan gjelde flere
+  kontoer). Rapport-e-post sendes til `BANK_SYNC_REPORT_EMAIL` ved både suksess og feil.
+- **Ingen YNAB-lengdegrenser** på payee/memo lenger. **Kun NOK** i første omgang.
 
 ## Faseplan
 
 0. ✅ Fundament: auth, layout, API, tester
-1. Manuelt regnskap: kontoer (cash/bank/credit/loan, aktiv vs overvåket), transaksjoner, saldoer
-2. Budsjettmotor: kategorigrupper/kategorier, månedlig tildeling, activity/available, Ready to Assign
-3. Mål + auto-allokering (sparemål, fyll opp til mål / dekk overtrekk)
-4. Bankintegrasjon (GoCardless bak `BankDataProvider`)
-5. Auto-kategorisering (regelmotor: payee + kategori)
-6. Nattlig sync-jobb (kø + scheduler)
-7. Planlagte/repeterende transaksjoner (fremtidige utgifter)
-8. Avansert: kredittkort-betalingslogikk, avstemming, rapporter, 2. leverandør
+1. ✅ Manuelt regnskap: kontoer (cash/bank/credit/loan, aktiv vs overvåket), transaksjoner, saldoer
+2. ✅ Budsjettmotor: kategorigrupper/kategorier, månedlig tildeling, activity/available, Ready to Assign
+3. ✅ Mål + auto-allokering (sparemål, fyll opp til mål / dekk overtrekk)
+4. ✅ Bankintegrasjon (GoCardless bak `BankDataProvider`)
+5. ✅ Auto-kategorisering (regelmotor: payee + memo + kategori, med avgrenset anvendelse + lås)
+6. ✅ Nattlig sync-jobb (kø + scheduler) + innstillinger (synk-dager) + gjenstående synk
+7. ✅ Planlagte/repeterende transaksjoner (regningsmodul: frekvens, auto-postering, projeksjon)
+8. ⬜ Avansert: kredittkort-betalingslogikk, avstemming, rapporter, 2. leverandør
+9. ⬜ Tverrgående: design/UX-polish + brukertilbakemeldinger (tas til slutt)
 
 ===
 
