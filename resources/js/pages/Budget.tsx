@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import Layout from '@/components/Layout';
 import {
     apiErrorMessage,
@@ -83,7 +84,13 @@ export default function Budget() {
                 </div>
             </div>
 
-            {budget && <ReadyToAssign amount={budget.ready_to_assign} />}
+            {budget && (
+                <ReadyToAssign
+                    amount={budget.ready_to_assign}
+                    upcomingIncome={budget.upcoming_income}
+                    projected={budget.projected_ready_to_assign}
+                />
+            )}
 
             {hasCategories && (
                 <div className="mt-3 flex gap-2">
@@ -147,16 +154,32 @@ export default function Budget() {
     );
 }
 
-function ReadyToAssign({ amount }: { amount: number }) {
+function ReadyToAssign({
+    amount,
+    upcomingIncome,
+    projected,
+}: {
+    amount: number;
+    upcomingIncome: number;
+    projected: number;
+}) {
     const positive = amount >= 0;
     return (
         <div
-            className={`mt-4 flex items-center justify-between rounded-xl px-5 py-4 ${
+            className={`mt-4 rounded-xl px-5 py-4 ${
                 positive ? 'bg-green-50 text-green-900' : 'bg-red-50 text-red-900'
             }`}
         >
-            <span className="text-sm font-medium">Klar til å fordele</span>
-            <span className="text-xl font-semibold tabular-nums">{formatNok(amount)}</span>
+            <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Klar til å fordele</span>
+                <span className="text-xl font-semibold tabular-nums">{formatNok(amount)}</span>
+            </div>
+            {upcomingIncome !== 0 && (
+                <div className="mt-1 flex items-center justify-between text-xs opacity-80">
+                    <span>Med kommende inntekt ({formatNok(upcomingIncome)})</span>
+                    <span className="tabular-nums">{formatNok(projected)}</span>
+                </div>
+            )}
         </div>
     );
 }
@@ -299,6 +322,27 @@ function CategoryRow({
                                     </button>
                                 </>
                             )}
+                        </p>
+                    )}
+                    {category.upcoming !== 0 && (
+                        <p className="text-xs text-neutral-400">
+                            <Link
+                                to={`/planlagte?category=${category.id}`}
+                                title="Vis planlagte i denne kategorien"
+                                className={`underline hover:text-neutral-900 ${
+                                    category.upcoming < 0 ? 'text-red-500' : 'text-green-600'
+                                }`}
+                            >
+                                Kommende {formatNok(category.upcoming)}
+                            </Link>
+                            {' · '}projisert{' '}
+                            <span
+                                className={
+                                    category.projected_available < 0 ? 'text-red-600' : 'text-neutral-600'
+                                }
+                            >
+                                {formatNok(category.projected_available)}
+                            </span>
                         </p>
                     )}
                 </div>

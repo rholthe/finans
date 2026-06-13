@@ -58,6 +58,8 @@ export interface BudgetCategory {
     assigned: number;
     activity: number;
     available: number;
+    upcoming: number; // sum av kommende, ikke-posterte poster i måneden (signert)
+    projected_available: number; // available + upcoming
     goal: Goal | null;
     needed: number; // hvor mye mer som må tildeles denne måneden (0 hvis i rute / uten mål)
 }
@@ -68,13 +70,48 @@ export interface BudgetGroup {
     assigned: number;
     activity: number;
     available: number;
+    upcoming: number;
+    projected_available: number;
     categories: BudgetCategory[];
 }
 
 export interface BudgetMonth {
     month: string; // YYYY-MM
     ready_to_assign: number;
+    upcoming_income: number; // netto kommende ukategoriserte poster på budsjettkontoer
+    projected_ready_to_assign: number;
     groups: BudgetGroup[];
+}
+
+export type ScheduleFrequency =
+    | 'weekly'
+    | 'biweekly'
+    | 'monthly'
+    | 'quarterly'
+    | 'semiannually'
+    | 'yearly';
+
+export const FREQUENCY_LABELS: Record<ScheduleFrequency, string> = {
+    weekly: 'Ukentlig',
+    biweekly: 'Hver 2. uke',
+    monthly: 'Månedlig',
+    quarterly: 'Hver 3. måned',
+    semiannually: 'Hver 6. måned',
+    yearly: 'Årlig',
+};
+
+export interface ScheduledTransaction {
+    id: number;
+    account_id: number;
+    category_id: number | null;
+    amount: number; // signert: positiv = inntekt, negativ = utgift
+    payee: string | null;
+    memo: string | null;
+    frequency: ScheduleFrequency;
+    start_date: string; // YYYY-MM-DD
+    next_date: string; // YYYY-MM-DD
+    end_date: string | null;
+    last_posted_date: string | null;
 }
 
 export const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {

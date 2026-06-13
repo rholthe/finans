@@ -15,6 +15,7 @@ class Transaction extends Model
     protected $fillable = [
         'account_id',
         'category_id',
+        'scheduled_transaction_id',
         'date',
         'amount',
         'payee',
@@ -50,5 +51,13 @@ class Transaction extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
+    }
+
+    /**
+     * @return BelongsTo<ScheduledTransaction, $this>
+     */
+    public function scheduledTransaction(): BelongsTo
+    {
+        return $this->belongsTo(ScheduledTransaction::class);
     }
 }

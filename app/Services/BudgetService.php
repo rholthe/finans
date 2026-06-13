@@ -6,6 +6,7 @@ use App\Models\BudgetAllocation;
 use App\Models\Category;
 use App\Models\CategoryGroup;
 use App\Models\Goal;
+use App\Models\ScheduledTransaction;
 use App\Models\Transaction;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
@@ -26,7 +27,7 @@ class BudgetService
      * Full budsjettvisning for én måned: grupper → kategorier med
      * assigned/activity/available, samt Ready to Assign.
      *
-     * @return array{month: string, ready_to_assign: float, groups: list<array{id: int, name: string, assigned: float, activity: float, available: float, categories: list<array{id: int, name: string, assigned: float, activity: float, available: float, goal: ?array{type: string, target_amount: float, target_date: ?string}, needed: float}>}>}
+     * @return array{month: string, ready_to_assign: float, upcoming_income: float, projected_ready_to_assign: float, groups: list<array<string, mixed>>}
      */
     public function monthlyView(string $month): array
     {
@@ -38,16 +39,19 @@ class BudgetService
         $activityThisMonth = $this->activityByCategory(from: $start, to: $end);
         $activityCumulative = $this->activityByCategory(to: $end);
 
+        [$upcomingByCategory, $upcomingIncome] = $this->upcomingForMonth($start, $end);
+
         $groups = CategoryGroup::query()
             ->with('categories.goal')
             ->orderBy('sort_order')
             ->orderBy('name')
             ->get()
-            ->map(function (CategoryGroup $group) use ($start, $assignedThisMonth, $assignedCumulative, $activityThisMonth, $activityCumulative): array {
-                $categories = $group->categories->map(function (Category $category) use ($start, $assignedThisMonth, $assignedCumulative, $activityThisMonth, $activityCumulative): array {
+            ->map(function (CategoryGroup $group) use ($start, $assignedThisMonth, $assignedCumulative, $activityThisMonth, $activityCumulative, $upcomingByCategory): array {
+                $categories = $group->categories->map(function (Category $category) use ($start, $assignedThisMonth, $assignedCumulative, $activityThisMonth, $activityCumulative, $upcomingByCategory): array {
                     $assigned = (float) ($assignedThisMonth[$category->id] ?? 0);
                     $activity = (float) ($activityThisMonth[$category->id] ?? 0);
                     $available = (float) ($assignedCumulative[$category->id] ?? 0) + (float) ($activityCumulative[$category->id] ?? 0);
+                    $upcoming = (float) ($upcomingByCategory[$category->id] ?? 0);
                     $month = $start->format('Y-m');
 
                     return [
@@ -56,6 +60,8 @@ class BudgetService
                         'assigned' => round($assigned, 2),
                         'activity' => round($activity, 2),
                         'available' => round($available, 2),
+                        'upcoming' => round($upcoming, 2),
+                        'projected_available' => round($available + $upcoming, 2),
                         'goal' => $this->goalPayload($category->goal),
                         'needed' => $category->goal
                             ? $category->goal->neededThisMonth($month, $assigned, $available)
@@ -69,16 +75,56 @@ class BudgetService
                     'assigned' => round(array_sum(array_column($categories, 'assigned')), 2),
                     'activity' => round(array_sum(array_column($categories, 'activity')), 2),
                     'available' => round(array_sum(array_column($categories, 'available')), 2),
+                    'upcoming' => round(array_sum(array_column($categories, 'upcoming')), 2),
+                    'projected_available' => round(array_sum(array_column($categories, 'projected_available')), 2),
                     'categories' => $categories,
                 ];
             })
             ->all();
 
+        $readyToAssign = $this->readyToAssign($start, $end);
+
         return [
             'month' => $start->format('Y-m'),
-            'ready_to_assign' => $this->readyToAssign($start, $end),
+            'ready_to_assign' => $readyToAssign,
+            'upcoming_income' => round($upcomingIncome, 2),
+            'projected_ready_to_assign' => round($readyToAssign + $upcomingIncome, 2),
             'groups' => $groups,
         ];
+    }
+
+    /**
+     * Kommende (ennå ikke posterte) planlagte poster i måneden, summert per
+     * kategori. Ukategoriserte poster på budsjettkontoer (typisk inntekt)
+     * returneres separat siden de påvirker Ready to Assign, ikke en kategori.
+     *
+     * @return array{0: array<int, float>, 1: float} [per kategori, ukategorisert netto]
+     */
+    private function upcomingForMonth(CarbonImmutable $start, CarbonImmutable $end): array
+    {
+        $byCategory = [];
+        $uncategorized = 0.0;
+
+        $schedules = ScheduledTransaction::query()
+            ->whereHas('account', fn ($q) => $q->where('on_budget', true))
+            ->get();
+
+        foreach ($schedules as $schedule) {
+            $count = count($schedule->occurrencesBetween($start, $end));
+            if ($count === 0) {
+                continue;
+            }
+
+            $total = (float) $schedule->amount * $count;
+
+            if ($schedule->category_id) {
+                $byCategory[$schedule->category_id] = ($byCategory[$schedule->category_id] ?? 0) + $total;
+            } else {
+                $uncategorized += $total;
+            }
+        }
+
+        return [$byCategory, $uncategorized];
     }
 
     /**

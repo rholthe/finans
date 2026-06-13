@@ -6,7 +6,9 @@ use App\Http\Controllers\BudgetController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CategoryGroupController;
 use App\Http\Controllers\GoalController;
+use App\Http\Controllers\ScheduledTransactionController;
 use App\Http\Controllers\TransactionController;
+use App\Http\Middleware\EnsureScheduledTransactionsPosted;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -21,10 +23,13 @@ Route::prefix('api')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
 
-    Route::middleware('auth.session')->group(function () {
+    Route::middleware(['auth.session', EnsureScheduledTransactionsPosted::class])->group(function () {
         Route::get('/ping', fn () => response()->json(['pong' => true]));
 
         Route::apiResource('accounts', AccountController::class);
+
+        Route::apiResource('scheduled-transactions', ScheduledTransactionController::class)
+            ->only(['index', 'store', 'update', 'destroy']);
         Route::get('accounts/{account}/transactions', [TransactionController::class, 'index']);
         Route::post('accounts/{account}/transactions', [TransactionController::class, 'store']);
         Route::apiResource('transactions', TransactionController::class)->only(['update', 'destroy']);

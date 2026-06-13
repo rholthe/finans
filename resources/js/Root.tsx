@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/auth';
 import Login from '@/pages/Login';
 import Budget from '@/pages/Budget';
+import Planlagte from '@/pages/Planlagte';
 import Accounts from '@/pages/Accounts';
 import AccountDetail from '@/pages/AccountDetail';
 import type { ReactNode } from 'react';
@@ -31,6 +32,7 @@ export default function App() {
                 <Routes>
                     <Route path="/login" element={<GuestOnly><Login /></GuestOnly>} />
                     <Route path="/" element={<RequireAuth><Budget /></RequireAuth>} />
+                    <Route path="/planlagte" element={<RequireAuth><Planlagte /></RequireAuth>} />
                     <Route path="/kontoer" element={<RequireAuth><Accounts /></RequireAuth>} />
                     <Route path="/accounts/:id" element={<RequireAuth><AccountDetail /></RequireAuth>} />
                     <Route path="*" element={<Navigate to="/" replace />} />

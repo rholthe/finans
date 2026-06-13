@@ -8,6 +8,8 @@ import type {
     CategoryGroup,
     Goal,
     GoalType,
+    ScheduledTransaction,
+    ScheduleFrequency,
     Transaction,
 } from '@/types';
 
@@ -189,4 +191,44 @@ export async function setGoal(categoryId: number, payload: GoalInput): Promise<G
 
 export async function deleteGoal(categoryId: number): Promise<void> {
     await api.delete(`/categories/${categoryId}/goal`);
+}
+
+// --- Planlagte (repeterende) transaksjoner ---
+
+export interface NewScheduledTransaction {
+    account_id: number;
+    category_id?: number | null;
+    amount: number;
+    payee?: string | null;
+    memo?: string | null;
+    frequency: ScheduleFrequency;
+    start_date: string; // YYYY-MM-DD
+    end_date?: string | null;
+}
+
+export async function listScheduledTransactions(): Promise<ScheduledTransaction[]> {
+    const res = await api.get<Wrapped<ScheduledTransaction[]>>('/scheduled-transactions');
+    return res.data.data;
+}
+
+export async function createScheduledTransaction(
+    payload: NewScheduledTransaction,
+): Promise<ScheduledTransaction> {
+    const res = await api.post<Wrapped<ScheduledTransaction>>('/scheduled-transactions', payload);
+    return res.data.data;
+}
+
+export async function updateScheduledTransaction(
+    id: number,
+    payload: Partial<NewScheduledTransaction>,
+): Promise<ScheduledTransaction> {
+    const res = await api.patch<Wrapped<ScheduledTransaction>>(
+        `/scheduled-transactions/${id}`,
+        payload,
+    );
+    return res.data.data;
+}
+
+export async function deleteScheduledTransaction(id: number): Promise<void> {
+    await api.delete(`/scheduled-transactions/${id}`);
 }
