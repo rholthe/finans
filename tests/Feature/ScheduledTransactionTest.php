@@ -166,6 +166,26 @@ class ScheduledTransactionTest extends TestCase
             ->assertJsonPath('projected_ready_to_assign', 3000);
     }
 
+    public function test_dekk_overtrekk_dekker_ogsaa_kommende_regninger(): void
+    {
+        $this->travelTo('2026-01-05');
+        $category = Category::factory()->create();
+        $account = Account::factory()->create(['on_budget' => true]);
+
+        // Inntekt nok i Ready to Assign, ingen postert aktivitet ennå.
+        $account->transactions()->create(['date' => '2026-01-01', 'amount' => 5000]);
+
+        // Kommende regning senere i måneden → projisert tilgjengelig = -800.
+        ScheduledTransaction::factory()
+            ->startingOn('2026-01-28')
+            ->create(['account_id' => $account->id, 'category_id' => $category->id, 'amount' => -800]);
+
+        $this->postJson('/api/budget/2026-01/auto-assign', ['strategy' => 'cover-overspending'])
+            ->assertOk()
+            ->assertJsonPath('groups.0.categories.0.assigned', 800)
+            ->assertJsonPath('groups.0.categories.0.projected_available', 0);
+    }
+
     public function test_middleware_posterer_forfalt_ved_api_kall(): void
     {
         $this->travelTo('2026-01-15');

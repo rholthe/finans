@@ -34,8 +34,10 @@ class GoalService
                     break 2;
                 }
 
+                // Dekk overtrekk bruker projisert tilgjengelig, slik at også
+                // kommende (ikke-posterte) regninger i måneden dekkes opp.
                 $wanted = $strategy === self::STRATEGY_COVER_OVERSPENDING
-                    ? max(0, -$category['available'])
+                    ? max(0, -$category['projected_available'])
                     : ($category['goal'] ? $category['needed'] : 0);
 
                 $amount = round(min($wanted, $remaining), 2);

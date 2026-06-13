@@ -264,7 +264,8 @@ function goalSummary(goal: Goal): string {
 }
 
 function availableClass(category: BudgetCategory): string {
-    if (category.available < 0) return 'text-red-600';
+    // Rød ved faktisk overtrekk, eller når kommende regninger vil overtrekke.
+    if (category.available < 0 || category.projected_available < 0) return 'text-red-600';
     if (category.goal && category.needed > 0) return 'text-amber-600';
     if (category.goal && category.needed === 0) return 'text-green-700';
     return 'text-neutral-900';
