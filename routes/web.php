@@ -5,6 +5,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BudgetController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CategoryGroupController;
+use App\Http\Controllers\GoalController;
 use App\Http\Controllers\TransactionController;
 use Illuminate\Support\Facades\Route;
 
@@ -31,8 +32,15 @@ Route::prefix('api')->group(function () {
         Route::apiResource('category-groups', CategoryGroupController::class)->except(['show']);
         Route::apiResource('categories', CategoryController::class)->only(['store', 'update', 'destroy']);
 
+        Route::put('categories/{category}/goal', [GoalController::class, 'upsert']);
+        Route::delete('categories/{category}/goal', [GoalController::class, 'destroy']);
+
         Route::get('budget', [BudgetController::class, 'show']);
         Route::put('budget/{month}/categories/{category}', [BudgetController::class, 'assign'])
+            ->where('month', '\d{4}-\d{2}');
+        Route::post('budget/{month}/categories/{category}/fund', [BudgetController::class, 'fundCategory'])
+            ->where('month', '\d{4}-\d{2}');
+        Route::post('budget/{month}/auto-assign', [BudgetController::class, 'autoAssign'])
             ->where('month', '\d{4}-\d{2}');
     });
 });

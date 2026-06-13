@@ -6,6 +6,8 @@ import type {
     BudgetMonth,
     Category,
     CategoryGroup,
+    Goal,
+    GoalType,
     Transaction,
 } from '@/types';
 
@@ -155,4 +157,36 @@ export async function assignBudget(
         assigned,
     });
     return res.data;
+}
+
+export type AutoAssignStrategy = 'fund-goals' | 'cover-overspending';
+
+export async function autoAssign(
+    month: string,
+    strategy: AutoAssignStrategy,
+): Promise<BudgetMonth> {
+    const res = await api.post<BudgetMonth>(`/budget/${month}/auto-assign`, { strategy });
+    return res.data;
+}
+
+export async function fundCategory(month: string, categoryId: number): Promise<BudgetMonth> {
+    const res = await api.post<BudgetMonth>(`/budget/${month}/categories/${categoryId}/fund`);
+    return res.data;
+}
+
+// --- Mål ---
+
+export interface GoalInput {
+    type: GoalType;
+    target_amount: number;
+    target_date?: string | null; // YYYY-MM (kun for target_balance_by_date)
+}
+
+export async function setGoal(categoryId: number, payload: GoalInput): Promise<Goal> {
+    const res = await api.put<Goal>(`/categories/${categoryId}/goal`, payload);
+    return res.data;
+}
+
+export async function deleteGoal(categoryId: number): Promise<void> {
+    await api.delete(`/categories/${categoryId}/goal`);
 }

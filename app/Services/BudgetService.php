@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\BudgetAllocation;
 use App\Models\Category;
 use App\Models\CategoryGroup;
+use App\Models\Goal;
 use App\Models\Transaction;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
@@ -25,7 +26,7 @@ class BudgetService
      * Full budsjettvisning for én måned: grupper → kategorier med
      * assigned/activity/available, samt Ready to Assign.
      *
-     * @return array{month: string, ready_to_assign: float, groups: list<array{id: int, name: string, assigned: float, activity: float, available: float, categories: list<array{id: int, name: string, assigned: float, activity: float, available: float}>}>}
+     * @return array{month: string, ready_to_assign: float, groups: list<array{id: int, name: string, assigned: float, activity: float, available: float, categories: list<array{id: int, name: string, assigned: float, activity: float, available: float, goal: ?array{type: string, target_amount: float, target_date: ?string}, needed: float}>}>}
      */
     public function monthlyView(string $month): array
     {
@@ -38,15 +39,16 @@ class BudgetService
         $activityCumulative = $this->activityByCategory(to: $end);
 
         $groups = CategoryGroup::query()
-            ->with('categories')
+            ->with('categories.goal')
             ->orderBy('sort_order')
             ->orderBy('name')
             ->get()
-            ->map(function (CategoryGroup $group) use ($assignedThisMonth, $assignedCumulative, $activityThisMonth, $activityCumulative): array {
-                $categories = $group->categories->map(function (Category $category) use ($assignedThisMonth, $assignedCumulative, $activityThisMonth, $activityCumulative): array {
+            ->map(function (CategoryGroup $group) use ($start, $assignedThisMonth, $assignedCumulative, $activityThisMonth, $activityCumulative): array {
+                $categories = $group->categories->map(function (Category $category) use ($start, $assignedThisMonth, $assignedCumulative, $activityThisMonth, $activityCumulative): array {
                     $assigned = (float) ($assignedThisMonth[$category->id] ?? 0);
                     $activity = (float) ($activityThisMonth[$category->id] ?? 0);
                     $available = (float) ($assignedCumulative[$category->id] ?? 0) + (float) ($activityCumulative[$category->id] ?? 0);
+                    $month = $start->format('Y-m');
 
                     return [
                         'id' => $category->id,
@@ -54,6 +56,10 @@ class BudgetService
                         'assigned' => round($assigned, 2),
                         'activity' => round($activity, 2),
                         'available' => round($available, 2),
+                        'goal' => $this->goalPayload($category->goal),
+                        'needed' => $category->goal
+                            ? $category->goal->neededThisMonth($month, $assigned, $available)
+                            : 0.0,
                     ];
                 })->all();
 
@@ -72,6 +78,25 @@ class BudgetService
             'month' => $start->format('Y-m'),
             'ready_to_assign' => $this->readyToAssign($start, $end),
             'groups' => $groups,
+        ];
+    }
+
+    /**
+     * Serialiser et mål for budsjettvisningen, eller null hvis kategorien
+     * ikke har et mål.
+     *
+     * @return array{type: string, target_amount: float, target_date: ?string}|null
+     */
+    private function goalPayload(?Goal $goal): ?array
+    {
+        if (! $goal) {
+            return null;
+        }
+
+        return [
+            'type' => $goal->type->value,
+            'target_amount' => round((float) $goal->target_amount, 2),
+            'target_date' => $goal->target_date?->toDateString(),
         ];
     }
 

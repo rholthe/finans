@@ -38,12 +38,28 @@ export interface CategoryGroup {
     categories: Category[];
 }
 
+export type GoalType = 'monthly' | 'target_balance' | 'target_balance_by_date';
+
+export interface Goal {
+    type: GoalType;
+    target_amount: number;
+    target_date: string | null; // YYYY-MM-DD (kun for target_balance_by_date)
+}
+
+export const GOAL_TYPE_LABELS: Record<GoalType, string> = {
+    monthly: 'Fyll opp hver måned',
+    target_balance: 'Spar opp til beløp',
+    target_balance_by_date: 'Spar opp til beløp innen dato',
+};
+
 export interface BudgetCategory {
     id: number;
     name: string;
     assigned: number;
     activity: number;
     available: number;
+    goal: Goal | null;
+    needed: number; // hvor mye mer som må tildeles denne måneden (0 hvis i rute / uten mål)
 }
 
 export interface BudgetGroup {

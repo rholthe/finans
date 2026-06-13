@@ -3,17 +3,31 @@ import Layout from '@/components/Layout';
 import {
     apiErrorMessage,
     assignBudget,
+    autoAssign,
     createCategory,
     createCategoryGroup,
+    deleteGoal,
+    fundCategory,
     getBudget,
+    setGoal,
+    type AutoAssignStrategy,
+    type GoalInput,
 } from '@/lib/data';
 import { currentMonth, formatNok, monthLabel, shiftMonth } from '@/lib/format';
-import type { BudgetCategory, BudgetGroup, BudgetMonth } from '@/types';
+import {
+    GOAL_TYPE_LABELS,
+    type BudgetCategory,
+    type BudgetGroup,
+    type BudgetMonth,
+    type Goal,
+    type GoalType,
+} from '@/types';
 
 export default function Budget() {
     const [month, setMonth] = useState(currentMonth());
     const [budget, setBudget] = useState<BudgetMonth | null>(null);
     const [loading, setLoading] = useState(true);
+    const [autoBusy, setAutoBusy] = useState(false);
 
     const reload = useCallback(() => {
         return getBudget(month).then(setBudget);
@@ -30,6 +44,19 @@ export default function Budget() {
         await createCategoryGroup(name);
         reload();
     }
+
+    async function runAutoAssign(strategy: AutoAssignStrategy) {
+        setAutoBusy(true);
+        try {
+            setBudget(await autoAssign(month, strategy));
+        } catch (e) {
+            console.error(apiErrorMessage(e, 'Auto-allokering feilet.'));
+        } finally {
+            setAutoBusy(false);
+        }
+    }
+
+    const hasCategories = !!budget && budget.groups.some((g) => g.categories.length > 0);
 
     return (
         <Layout>
@@ -58,6 +85,25 @@ export default function Budget() {
 
             {budget && <ReadyToAssign amount={budget.ready_to_assign} />}
 
+            {hasCategories && (
+                <div className="mt-3 flex gap-2">
+                    <button
+                        onClick={() => runAutoAssign('fund-goals')}
+                        disabled={autoBusy}
+                        className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-50"
+                    >
+                        Fyll opp mål
+                    </button>
+                    <button
+                        onClick={() => runAutoAssign('cover-overspending')}
+                        disabled={autoBusy}
+                        className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-50"
+                    >
+                        Dekk overtrekk
+                    </button>
+                </div>
+            )}
+
             {loading && !budget ? (
                 <p className="mt-8 text-neutral-400">Laster …</p>
             ) : !budget || budget.groups.length === 0 ? (
@@ -80,7 +126,13 @@ export default function Budget() {
                             <span className="text-right">Tilgjengelig</span>
                         </div>
                         {budget.groups.map((group) => (
-                            <Group key={group.id} group={group} month={month} onChange={setBudget} onAdded={reload} />
+                            <Group
+                                key={group.id}
+                                group={group}
+                                month={month}
+                                onChange={setBudget}
+                                reload={reload}
+                            />
                         ))}
                     </div>
                     <button
@@ -113,12 +165,12 @@ function Group({
     group,
     month,
     onChange,
-    onAdded,
+    reload,
 }: {
     group: BudgetGroup;
     month: string;
     onChange: (budget: BudgetMonth) => void;
-    onAdded: () => void;
+    reload: () => void;
 }) {
     const [adding, setAdding] = useState(false);
     const [name, setName] = useState('');
@@ -130,7 +182,7 @@ function Group({
         await createCategory(group.id, trimmed);
         setName('');
         setAdding(false);
-        onAdded();
+        reload();
     }
 
     return (
@@ -143,7 +195,13 @@ function Group({
             </div>
 
             {group.categories.map((category) => (
-                <CategoryRow key={category.id} category={category} month={month} onChange={onChange} />
+                <CategoryRow
+                    key={category.id}
+                    category={category}
+                    month={month}
+                    onChange={onChange}
+                    reload={reload}
+                />
             ))}
 
             {adding ? (
@@ -169,30 +227,227 @@ function Group({
     );
 }
 
+function goalSummary(goal: Goal): string {
+    switch (goal.type) {
+        case 'monthly':
+            return `Mål: ${formatNok(goal.target_amount)} hver måned`;
+        case 'target_balance':
+            return `Mål: spar ${formatNok(goal.target_amount)}`;
+        case 'target_balance_by_date':
+            return `Mål: spar ${formatNok(goal.target_amount)} innen ${
+                goal.target_date ? monthLabel(goal.target_date.slice(0, 7)) : '—'
+            }`;
+    }
+}
+
+function availableClass(category: BudgetCategory): string {
+    if (category.available < 0) return 'text-red-600';
+    if (category.goal && category.needed > 0) return 'text-amber-600';
+    if (category.goal && category.needed === 0) return 'text-green-700';
+    return 'text-neutral-900';
+}
+
 function CategoryRow({
     category,
     month,
     onChange,
+    reload,
 }: {
     category: BudgetCategory;
     month: string;
     onChange: (budget: BudgetMonth) => void;
+    reload: () => void;
 }) {
+    const [editingGoal, setEditingGoal] = useState(false);
+
+    async function fund() {
+        onChange(await fundCategory(month, category.id));
+    }
+
     return (
-        <div className="grid grid-cols-[1fr_8rem_8rem_8rem] items-center gap-2 px-4 py-1.5 hover:bg-neutral-50">
-            <span className="text-sm">{category.name}</span>
-            <AssignedInput category={category} month={month} onChange={onChange} />
-            <span className="text-right text-sm tabular-nums text-neutral-500">
-                {formatNok(category.activity)}
-            </span>
-            <span
-                className={`text-right text-sm font-medium tabular-nums ${
-                    category.available < 0 ? 'text-red-600' : 'text-neutral-900'
-                }`}
-            >
-                {formatNok(category.available)}
-            </span>
+        <div className="border-b border-neutral-50 last:border-0">
+            <div className="grid grid-cols-[1fr_8rem_8rem_8rem] items-center gap-2 px-4 py-1.5 hover:bg-neutral-50">
+                <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                        <span className="truncate text-sm">{category.name}</span>
+                        <button
+                            onClick={() => setEditingGoal((v) => !v)}
+                            title={category.goal ? 'Rediger mål' : 'Sett mål'}
+                            className={`text-xs ${
+                                category.goal
+                                    ? 'text-neutral-500 hover:text-neutral-900'
+                                    : 'text-neutral-300 hover:text-neutral-600'
+                            }`}
+                        >
+                            ◎
+                        </button>
+                    </div>
+                    {category.goal && (
+                        <p className="text-xs text-neutral-400">
+                            {goalSummary(category.goal)}
+                            {category.needed > 0 && (
+                                <>
+                                    {' · '}
+                                    <span className="text-amber-600">
+                                        trenger {formatNok(category.needed)}
+                                    </span>
+                                    <button
+                                        onClick={fund}
+                                        className="ml-1 font-medium text-neutral-600 underline hover:text-neutral-900"
+                                    >
+                                        fyll
+                                    </button>
+                                </>
+                            )}
+                        </p>
+                    )}
+                </div>
+                <AssignedInput category={category} month={month} onChange={onChange} />
+                <span className="text-right text-sm tabular-nums text-neutral-500">
+                    {formatNok(category.activity)}
+                </span>
+                <span className={`text-right text-sm font-medium tabular-nums ${availableClass(category)}`}>
+                    {formatNok(category.available)}
+                </span>
+            </div>
+
+            {editingGoal && (
+                <GoalForm
+                    category={category}
+                    onSaved={() => {
+                        setEditingGoal(false);
+                        reload();
+                    }}
+                    onCancel={() => setEditingGoal(false)}
+                />
+            )}
         </div>
+    );
+}
+
+function GoalForm({
+    category,
+    onSaved,
+    onCancel,
+}: {
+    category: BudgetCategory;
+    onSaved: () => void;
+    onCancel: () => void;
+}) {
+    const existing = category.goal;
+    const [type, setType] = useState<GoalType>(existing?.type ?? 'monthly');
+    const [amount, setAmount] = useState(existing ? String(existing.target_amount) : '');
+    const [date, setDate] = useState(existing?.target_date?.slice(0, 7) ?? '');
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    async function save(e: FormEvent) {
+        e.preventDefault();
+        const target = Number(amount);
+        if (!target || target <= 0) {
+            setError('Oppgi et beløp større enn 0.');
+            return;
+        }
+        if (type === 'target_balance_by_date' && !date) {
+            setError('Velg en måned for fristen.');
+            return;
+        }
+        setBusy(true);
+        setError(null);
+        const payload: GoalInput = {
+            type,
+            target_amount: target,
+            target_date: type === 'target_balance_by_date' ? date : null,
+        };
+        try {
+            await setGoal(category.id, payload);
+            onSaved();
+        } catch (err) {
+            setError(apiErrorMessage(err, 'Kunne ikke lagre målet.'));
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    async function remove() {
+        setBusy(true);
+        try {
+            await deleteGoal(category.id);
+            onSaved();
+        } catch (err) {
+            setError(apiErrorMessage(err, 'Kunne ikke fjerne målet.'));
+            setBusy(false);
+        }
+    }
+
+    return (
+        <form onSubmit={save} className="flex flex-wrap items-end gap-3 bg-neutral-50 px-4 py-3">
+            <label className="text-xs font-medium text-neutral-600">
+                Måltype
+                <select
+                    value={type}
+                    onChange={(e) => setType(e.target.value as GoalType)}
+                    className="mt-1 block rounded-lg border border-neutral-300 px-2 py-1.5 text-sm focus:border-neutral-900 focus:outline-none"
+                >
+                    {(Object.keys(GOAL_TYPE_LABELS) as GoalType[]).map((value) => (
+                        <option key={value} value={value}>
+                            {GOAL_TYPE_LABELS[value]}
+                        </option>
+                    ))}
+                </select>
+            </label>
+
+            <label className="text-xs font-medium text-neutral-600">
+                Beløp
+                <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    className="mt-1 block w-28 rounded-lg border border-neutral-300 px-2 py-1.5 text-right text-sm focus:border-neutral-900 focus:outline-none"
+                />
+            </label>
+
+            {type === 'target_balance_by_date' && (
+                <label className="text-xs font-medium text-neutral-600">
+                    Frist
+                    <input
+                        type="month"
+                        value={date}
+                        onChange={(e) => setDate(e.target.value)}
+                        className="mt-1 block rounded-lg border border-neutral-300 px-2 py-1.5 text-sm focus:border-neutral-900 focus:outline-none"
+                    />
+                </label>
+            )}
+
+            <button
+                type="submit"
+                disabled={busy}
+                className="rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+            >
+                Lagre
+            </button>
+            {existing && (
+                <button
+                    type="button"
+                    onClick={remove}
+                    disabled={busy}
+                    className="rounded-lg px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                >
+                    Fjern
+                </button>
+            )}
+            <button
+                type="button"
+                onClick={onCancel}
+                className="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-500 hover:bg-neutral-100"
+            >
+                Avbryt
+            </button>
+
+            {error && <p className="w-full text-sm text-red-600">{error}</p>}
+        </form>
     );
 }
 

@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Category extends Model
 {
@@ -34,6 +35,14 @@ class Category extends Model
     public function allocations(): HasMany
     {
         return $this->hasMany(BudgetAllocation::class);
+    }
+
+    /**
+     * @return HasOne<Goal, $this>
+     */
+    public function goal(): HasOne
+    {
+        return $this->hasOne(Goal::class);
     }
 
     /**
