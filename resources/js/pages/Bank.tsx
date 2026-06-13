@@ -5,13 +5,26 @@ import {
     apiErrorMessage,
     connectBank,
     deleteBankConnection,
+    getSyncStatus,
     linkBankAccount,
     listAccounts,
     listBankConnections,
     listInstitutions,
     syncBank,
 } from '@/lib/data';
-import type { Account, BankConnection, Institution, SyncResult } from '@/types';
+import type { Account, BankAccountLink, BankConnection, Institution, SyncResult } from '@/types';
+
+/** «3 av 4 igjen» + når kvoten nullstilles, fra sist kjente rate-limit. */
+function rateLimitLabel(a: BankAccountLink): string | null {
+    if (a.rate_limit_remaining === null) return null;
+    const total = a.rate_limit ? ` av ${a.rate_limit}` : '';
+    let reset = '';
+    if (a.rate_limit_reset_at) {
+        const hours = Math.max(0, Math.round((new Date(a.rate_limit_reset_at).getTime() - Date.now()) / 3_600_000));
+        reset = hours > 0 ? `, nullstilles om ~${hours}t` : '';
+    }
+    return `${a.rate_limit_remaining}${total} synk igjen i dag${reset}`;
+}
 
 const SANDBOX_ID = 'SANDBOXFINANCE_SFIN0000';
 
@@ -68,8 +81,16 @@ export default function Bank() {
     async function runSync() {
         setSyncing(true);
         setError(null);
+        setSyncResult(null);
         try {
-            setSyncResult(await syncBank());
+            const started = await syncBank(); // køet → status «processing»
+            // Poll til jobben er ferdig.
+            let result = started;
+            while (!result.finished) {
+                await new Promise((r) => setTimeout(r, 1500));
+                result = await getSyncStatus(started.id);
+            }
+            setSyncResult(result);
             await reloadConnections();
         } catch (e) {
             setError(apiErrorMessage(e, 'Synk feilet.'));
@@ -214,6 +235,11 @@ export default function Bank() {
                                     >
                                         <span className="text-sm text-neutral-600">
                                             {bankAccount.iban ?? bankAccount.external_id}
+                                            {rateLimitLabel(bankAccount) && (
+                                                <span className="ml-2 text-xs text-neutral-400">
+                                                    ({rateLimitLabel(bankAccount)})
+                                                </span>
+                                            )}
                                         </span>
                                         <div className="flex items-center gap-3">
                                             <label className="text-xs text-neutral-500">

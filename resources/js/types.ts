@@ -170,6 +170,9 @@ export interface BankAccountLink {
     iban: string | null;
     account_id: number | null;
     ignored: boolean;
+    rate_limit: number | null;
+    rate_limit_remaining: number | null;
+    rate_limit_reset_at: string | null;
 }
 
 export interface BankConnection {
@@ -181,7 +184,15 @@ export interface BankConnection {
 }
 
 export interface SyncResult {
+    id: number;
     status: string;
+    trigger: string;
     imported_count: number;
     report: { status: string; message: string }[];
+    finished: boolean;
+}
+
+export interface AppSettings {
+    manual_sync_days: number;
+    auto_sync_days: number;
 }

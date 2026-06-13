@@ -8,6 +8,7 @@ use App\Models\BankConnection;
 use App\Models\SyncEvent;
 use App\Models\Transaction;
 use App\Services\Rules\RuleEngine;
+use App\Support\AppSettings;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Throwable;
@@ -31,13 +32,37 @@ class BankSyncService
         private readonly RuleEngine $rules,
     ) {}
 
-    public function sync(): SyncEvent
+    /**
+     * Opprett en SyncEvent (status «processing») og kjør synken. Brukes når vi
+     * ikke har en forhåndsopprettet event (CLI/tester).
+     *
+     * @param  int|null  $days  Antall dager bakover; default ut fra trigger.
+     */
+    public function sync(?int $days = null, string $trigger = 'manual'): SyncEvent
+    {
+        $days ??= $trigger === 'auto' ? AppSettings::autoSyncDays() : AppSettings::manualSyncDays();
+
+        $event = SyncEvent::create([
+            'status' => SyncEvent::STATUS_PROCESSING,
+            'trigger' => $trigger,
+            'days_synced' => $days,
+        ]);
+
+        $this->runInto($event, $days);
+
+        return $event;
+    }
+
+    /**
+     * Kjør synken inn i en allerede opprettet (processing) SyncEvent, og
+     * finaliser den. Brukes av den køede jobben.
+     */
+    public function runInto(SyncEvent $event, int $days): void
     {
         $this->report = [];
         $this->imported = 0;
         $this->hasErrors = false;
 
-        $days = (int) config('gocardless.sync_days');
         $dateFrom = now()->subDays($days)->toDateString();
         $criticalError = null;
 
@@ -76,7 +101,7 @@ class BankSyncService
             default => SyncEvent::STATUS_NO_NEW,
         };
 
-        $event = SyncEvent::create([
+        $event->update([
             'status' => $status,
             'imported_count' => $this->imported,
             'days_synced' => $days,
@@ -84,8 +109,6 @@ class BankSyncService
         ]);
 
         $this->sendReport($event);
-
-        return $event;
     }
 
     /**

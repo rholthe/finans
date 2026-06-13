@@ -2,10 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\SyncBankTransactionsJob;
 use App\Models\BankAccount;
 use App\Models\BankConnection;
+use App\Models\SyncEvent;
 use App\Services\Bank\BankDataProvider;
-use App\Services\Bank\BankSyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -45,6 +46,9 @@ class BankController extends Controller
                     'iban' => $a->iban,
                     'account_id' => $a->account_id,
                     'ignored' => $a->ignored,
+                    'rate_limit' => $a->rate_limit,
+                    'rate_limit_remaining' => $a->rate_limit_remaining,
+                    'rate_limit_reset_at' => $a->rate_limit_reset_at?->toIso8601String(),
                 ])->all(),
             ]);
 
@@ -156,16 +160,41 @@ class BankController extends Controller
     }
 
     /**
-     * Kjør en synk nå.
+     * Start en manuell synk: opprett en processing-event og legg jobben i kø.
+     * Frontend poller status via syncStatus().
      */
-    public function sync(BankSyncService $service): JsonResponse
+    public function sync(): JsonResponse
     {
-        $event = $service->sync();
+        $event = SyncEvent::create([
+            'status' => SyncEvent::STATUS_PROCESSING,
+            'trigger' => 'manual',
+        ]);
 
-        return response()->json([
+        SyncBankTransactionsJob::dispatch($event->id, 'manual');
+
+        return response()->json($this->eventPayload($event), 202);
+    }
+
+    /**
+     * Status for en synk-hendelse (for polling fra frontend).
+     */
+    public function syncStatus(SyncEvent $syncEvent): JsonResponse
+    {
+        return response()->json($this->eventPayload($syncEvent));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function eventPayload(SyncEvent $event): array
+    {
+        return [
+            'id' => $event->id,
             'status' => $event->status,
+            'trigger' => $event->trigger,
             'imported_count' => $event->imported_count,
             'report' => $event->report,
-        ]);
+            'finished' => $event->status !== SyncEvent::STATUS_PROCESSING,
+        ];
     }
 }

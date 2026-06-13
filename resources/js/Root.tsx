@@ -5,6 +5,7 @@ import Budget from '@/pages/Budget';
 import Planlagte from '@/pages/Planlagte';
 import Bank from '@/pages/Bank';
 import Regler from '@/pages/Regler';
+import Innstillinger from '@/pages/Innstillinger';
 import Accounts from '@/pages/Accounts';
 import AccountDetail from '@/pages/AccountDetail';
 import type { ReactNode } from 'react';
@@ -38,6 +39,7 @@ export default function App() {
                     <Route path="/kontoer" element={<RequireAuth><Accounts /></RequireAuth>} />
                     <Route path="/bank" element={<RequireAuth><Bank /></RequireAuth>} />
                     <Route path="/regler" element={<RequireAuth><Regler /></RequireAuth>} />
+                    <Route path="/innstillinger" element={<RequireAuth><Innstillinger /></RequireAuth>} />
                     <Route path="/accounts/:id" element={<RequireAuth><AccountDetail /></RequireAuth>} />
                     <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>

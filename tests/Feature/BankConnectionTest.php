@@ -2,11 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\SyncBankTransactionsJob;
 use App\Models\Account;
 use App\Models\BankConnection;
+use App\Models\SyncEvent;
 use App\Services\Bank\BankDataProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Queue;
 use Tests\Support\FakeBankProvider;
 use Tests\TestCase;
 
@@ -94,5 +97,48 @@ class BankConnectionTest extends TestCase
 
         $this->assertDatabaseMissing('bank_connections', ['id' => $connection->id]);
         $this->assertDatabaseMissing('bank_accounts', ['external_id' => 'acc-a']);
+    }
+
+    public function test_manuell_synk_koeer_jobben_og_lager_processing_event(): void
+    {
+        Queue::fake();
+
+        $this->postJson('/api/bank/sync')
+            ->assertStatus(202)
+            ->assertJsonPath('status', SyncEvent::STATUS_PROCESSING)
+            ->assertJsonPath('finished', false);
+
+        Queue::assertPushed(SyncBankTransactionsJob::class);
+        $this->assertDatabaseHas('sync_events', ['status' => 'processing', 'trigger' => 'manual']);
+    }
+
+    public function test_synk_status_kan_polles(): void
+    {
+        $event = SyncEvent::create([
+            'status' => SyncEvent::STATUS_NEW,
+            'trigger' => 'manual',
+            'imported_count' => 4,
+        ]);
+
+        $this->getJson("/api/bank/sync-status/{$event->id}")
+            ->assertOk()
+            ->assertJsonPath('finished', true)
+            ->assertJsonPath('imported_count', 4);
+    }
+
+    public function test_connections_viser_rate_limit(): void
+    {
+        $connection = BankConnection::create([
+            'institution_id' => 'SANDBOXFINANCE_SFIN0000', 'name' => 'Sandbox', 'requisition_id' => 'r', 'status' => 'LN',
+        ]);
+        $connection->bankAccounts()->create([
+            'external_id' => 'acc-a',
+            'rate_limit' => 4,
+            'rate_limit_remaining' => 2,
+        ]);
+
+        $this->getJson('/api/bank/connections')
+            ->assertOk()
+            ->assertJsonPath('data.0.accounts.0.rate_limit_remaining', 2);
     }
 }

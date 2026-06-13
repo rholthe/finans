@@ -7,6 +7,7 @@ import type {
     BudgetMonth,
     Category,
     CategoryGroup,
+    AppSettings,
     Goal,
     GoalType,
     Institution,
@@ -297,9 +298,25 @@ export async function deleteBankConnection(id: number): Promise<void> {
     await api.delete(`/bank/connections/${id}`);
 }
 
+/** Starter en manuell synk (køes). Returnerer processing-event som kan polles. */
 export async function syncBank(): Promise<SyncResult> {
     const res = await api.post<SyncResult>('/bank/sync');
     return res.data;
+}
+
+export async function getSyncStatus(id: number): Promise<SyncResult> {
+    const res = await api.get<SyncResult>(`/bank/sync-status/${id}`);
+    return res.data;
+}
+
+export async function getSettings(): Promise<AppSettings> {
+    const res = await api.get<Wrapped<AppSettings>>('/settings');
+    return res.data.data;
+}
+
+export async function updateSettings(payload: Partial<AppSettings>): Promise<AppSettings> {
+    const res = await api.put<Wrapped<AppSettings>>('/settings', payload);
+    return res.data.data;
 }
 
 // --- Regelmotor ---

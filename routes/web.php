@@ -9,6 +9,7 @@ use App\Http\Controllers\CategoryGroupController;
 use App\Http\Controllers\GoalController;
 use App\Http\Controllers\RuleController;
 use App\Http\Controllers\ScheduledTransactionController;
+use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Middleware\EnsureScheduledTransactionsPosted;
 use Illuminate\Support\Facades\Route;
@@ -65,6 +66,10 @@ Route::prefix('api')->group(function () {
         Route::put('bank/accounts/{bankAccount}', [BankController::class, 'linkAccount']);
         Route::delete('bank/connections/{bankConnection}', [BankController::class, 'deleteConnection']);
         Route::post('bank/sync', [BankController::class, 'sync']);
+        Route::get('bank/sync-status/{syncEvent}', [BankController::class, 'syncStatus']);
+
+        Route::get('settings', [SettingsController::class, 'show']);
+        Route::put('settings', [SettingsController::class, 'update']);
     });
 });
 

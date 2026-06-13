@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class SyncEvent extends Model
 {
+    public const STATUS_PROCESSING = 'processing';
+
     public const STATUS_NEW = 'completed_new';
 
     public const STATUS_NO_NEW = 'completed_no_new';
@@ -16,6 +18,7 @@ class SyncEvent extends Model
 
     protected $fillable = [
         'status',
+        'trigger',
         'imported_count',
         'days_synced',
         'report',
