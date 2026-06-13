@@ -21,6 +21,8 @@ class TransactionResource extends JsonResource
             'account_id' => $this->account_id,
             'category_id' => $this->category_id,
             'rule_id' => $this->rule_id,
+            'locked' => $this->locked,
+            'bank_description' => $this->bank_description,
             'date' => $this->date->toDateString(),
             'amount' => round((float) $this->amount, 2),
             'payee' => $this->payee,

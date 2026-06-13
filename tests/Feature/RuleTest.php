@@ -79,25 +79,31 @@ class RuleTest extends TestCase
         $this->assertDatabaseHas('rules', ['id' => $b->id, 'priority' => 5]);
     }
 
-    public function test_reapply_oppdaterer_eksisterende_banktransaksjon(): void
+    private function bankTransaction(array $attributes = []): Transaction
     {
         $account = Account::factory()->create();
-        $category = Category::factory()->create();
-        $transaction = Transaction::create([
+
+        return Transaction::create(array_merge([
             'account_id' => $account->id,
-            'external_id' => 'tx-1',
+            'external_id' => 'tx-'.fake()->unique()->numerify('####'),
             'bank_description' => 'KORTKJØP REMA 1000 OSLO',
             'date' => '2026-01-10',
             'amount' => -250,
             'payee' => 'KORTKJØP REMA 1000 OSLO',
-        ]);
+        ], $attributes));
+    }
+
+    public function test_apply_rules_paa_avgrenset_sett(): void
+    {
+        $category = Category::factory()->create();
+        $transaction = $this->bankTransaction();
         $rule = Rule::factory()->create([
             'match_contains' => 'REMA',
             'set_payee' => 'Rema 1000',
             'category_id' => $category->id,
         ]);
 
-        $this->postJson('/api/rules/reapply')
+        $this->postJson('/api/transactions/apply-rules', ['transaction_ids' => [$transaction->id]])
             ->assertOk()
             ->assertJsonPath('updated', 1);
 
@@ -107,20 +113,41 @@ class RuleTest extends TestCase
         $this->assertSame($rule->id, $transaction->rule_id);
     }
 
-    public function test_reapply_rorer_ikke_manuelle_transaksjoner(): void
+    public function test_apply_rules_hopper_over_laaste(): void
     {
-        $account = Account::factory()->create();
-        // Manuell transaksjon uten bank_description skal ikke berøres.
-        $manual = Transaction::create([
-            'account_id' => $account->id,
-            'date' => '2026-01-10',
-            'amount' => -100,
-            'payee' => 'Manuell',
-        ]);
-        Rule::factory()->create(['match_contains' => 'Manuell', 'set_payee' => 'Endret']);
+        $transaction = $this->bankTransaction(['locked' => true]);
+        Rule::factory()->create(['match_contains' => 'REMA', 'set_payee' => 'Rema 1000']);
 
-        $this->postJson('/api/rules/reapply')->assertJsonPath('updated', 0);
+        $this->postJson('/api/transactions/apply-rules', ['transaction_ids' => [$transaction->id]])
+            ->assertJsonPath('updated', 0);
 
-        $this->assertSame('Manuell', $manual->fresh()->payee);
+        $this->assertSame('KORTKJØP REMA 1000 OSLO', $transaction->fresh()->payee);
+    }
+
+    public function test_apply_rules_hopper_over_allerede_matchede_som_standard(): void
+    {
+        $rule = Rule::factory()->create(['match_contains' => 'REMA', 'set_payee' => 'Rema 1000']);
+        $transaction = $this->bankTransaction(['rule_id' => $rule->id, 'payee' => 'Rema 1000']);
+
+        // Uten include_matched: allerede matchet → hoppes over.
+        $this->postJson('/api/transactions/apply-rules', ['transaction_ids' => [$transaction->id]])
+            ->assertJsonPath('updated', 0);
+
+        // Med include_matched: re-evalueres (her settes memo fra bankteksten).
+        $this->postJson('/api/transactions/apply-rules', [
+            'transaction_ids' => [$transaction->id],
+            'include_matched' => true,
+        ])->assertJsonPath('updated', 1);
+    }
+
+    public function test_manuell_redigering_laaser_transaksjonen(): void
+    {
+        $transaction = $this->bankTransaction();
+
+        $this->patchJson("/api/transactions/{$transaction->id}", ['payee' => 'Min payee'])
+            ->assertOk()
+            ->assertJsonPath('data.locked', true);
+
+        $this->assertTrue($transaction->fresh()->locked);
     }
 }

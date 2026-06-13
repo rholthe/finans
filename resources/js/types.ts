@@ -16,12 +16,26 @@ export interface Transaction {
     account_id: number;
     category_id: number | null;
     rule_id: number | null;
+    locked: boolean;
+    bank_description: string | null;
     date: string; // YYYY-MM-DD
     amount: number; // signert: positiv = inn, negativ = ut
     payee: string | null;
     memo: string | null;
     cleared: boolean;
     is_starting_balance: boolean;
+}
+
+export interface PageMeta {
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+}
+
+export interface Paginated<T> {
+    data: T[];
+    meta: PageMeta;
 }
 
 export type RuleApplies = 'both' | 'inflow' | 'outflow';

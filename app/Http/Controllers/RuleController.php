@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Enums\RuleApplies;
 use App\Http\Resources\RuleResource;
 use App\Models\Rule;
-use App\Services\Rules\ReapplyRules;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -62,14 +61,6 @@ class RuleController extends Controller
         }
 
         return response()->json(status: 204);
-    }
-
-    /**
-     * Kjør reglene på nytt mot eksisterende bank-importerte transaksjoner.
-     */
-    public function reapply(ReapplyRules $service): JsonResponse
-    {
-        return response()->json(['updated' => $service->run()]);
     }
 
     /**

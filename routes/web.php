@@ -34,6 +34,7 @@ Route::prefix('api')->group(function () {
             ->only(['index', 'store', 'update', 'destroy']);
         Route::get('accounts/{account}/transactions', [TransactionController::class, 'index']);
         Route::post('accounts/{account}/transactions', [TransactionController::class, 'store']);
+        Route::post('transactions/apply-rules', [TransactionController::class, 'applyRules']);
         Route::apiResource('transactions', TransactionController::class)->only(['update', 'destroy']);
 
         Route::apiResource('category-groups', CategoryGroupController::class)->except(['show']);
@@ -50,9 +51,10 @@ Route::prefix('api')->group(function () {
         Route::post('budget/{month}/auto-assign', [BudgetController::class, 'autoAssign'])
             ->where('month', '\d{4}-\d{2}');
 
-        // Regelmotor (payee/memo/kategori) – leverandøruavhengig
+        // Regelmotor (payee/memo/kategori) – leverandøruavhengig.
+        // Global re-kjøring finnes kun som CLI (rules:reapply); UI bruker den
+        // avgrensede transactions/apply-rules på et filtrert/synlig sett.
         Route::put('rules/reorder', [RuleController::class, 'reorder']);
-        Route::post('rules/reapply', [RuleController::class, 'reapply']);
         Route::apiResource('rules', RuleController::class)->only(['index', 'store', 'update', 'destroy']);
 
         // Bankintegrasjon (GoCardless bak BankDataProvider)

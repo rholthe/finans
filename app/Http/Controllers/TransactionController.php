@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Resources\TransactionResource;
 use App\Models\Account;
 use App\Models\Transaction;
+use App\Services\Rules\ReapplyRules;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -13,14 +14,24 @@ use Illuminate\Validation\Rule;
 class TransactionController extends Controller
 {
     /**
-     * Transaksjoner for en konto, nyeste først.
+     * Transaksjoner for en konto, nyeste først. Støtter datofilter (from/to)
+     * og valgbar sidestørrelse (per_page).
      */
-    public function index(Account $account): AnonymousResourceCollection
+    public function index(Request $request, Account $account): AnonymousResourceCollection
     {
+        $validated = $request->validate([
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:500'],
+        ]);
+
         $transactions = $account->transactions()
+            ->when($validated['from'] ?? null, fn ($q, $from) => $q->whereDate('date', '>=', $from))
+            ->when($validated['to'] ?? null, fn ($q, $to) => $q->whereDate('date', '<=', $to))
             ->orderByDesc('date')
             ->orderByDesc('id')
-            ->paginate(100);
+            ->paginate($validated['per_page'] ?? 100)
+            ->withQueryString();
 
         return TransactionResource::collection($transactions);
     }
@@ -40,6 +51,12 @@ class TransactionController extends Controller
     {
         $validated = $this->validatePayload($request, partial: true);
 
+        // En manuell endring av regelstyrte felter låser raden, slik at
+        // regelmotoren aldri overskriver den senere.
+        if ($request->hasAny(['payee', 'memo', 'category_id'])) {
+            $validated['locked'] = true;
+        }
+
         $transaction->update($validated);
 
         return TransactionResource::make($transaction);
@@ -50,6 +67,26 @@ class TransactionController extends Controller
         $transaction->delete();
 
         return response()->json(status: 204);
+    }
+
+    /**
+     * Kjør reglene på et avgrenset sett transaksjoner (det brukeren ser etter
+     * filtrering/paginering). Låste og – som standard – allerede matchede hoppes over.
+     */
+    public function applyRules(Request $request, ReapplyRules $service): JsonResponse
+    {
+        $validated = $request->validate([
+            'transaction_ids' => ['required', 'array'],
+            'transaction_ids.*' => ['integer'],
+            'include_matched' => ['sometimes', 'boolean'],
+        ]);
+
+        $updated = $service->applyToIds(
+            $validated['transaction_ids'],
+            $validated['include_matched'] ?? false,
+        );
+
+        return response()->json(['updated' => $updated]);
     }
 
     /**
@@ -66,6 +103,7 @@ class TransactionController extends Controller
             'payee' => ['nullable', 'string', 'max:255'],
             'memo' => ['nullable', 'string'],
             'cleared' => ['sometimes', 'boolean'],
+            'locked' => ['sometimes', 'boolean'],
         ]);
     }
 }

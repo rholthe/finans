@@ -10,6 +10,7 @@ import type {
     Goal,
     GoalType,
     Institution,
+    Paginated,
     Rule,
     RuleApplies,
     ScheduledTransaction,
@@ -82,9 +83,38 @@ export async function deleteAccount(id: number): Promise<void> {
     await api.delete(`/accounts/${id}`);
 }
 
-export async function listTransactions(accountId: number): Promise<Transaction[]> {
-    const res = await api.get<Wrapped<Transaction[]>>(`/accounts/${accountId}/transactions`);
-    return res.data.data;
+export interface TransactionQuery {
+    from?: string;
+    to?: string;
+    perPage?: number;
+    page?: number;
+}
+
+export async function getTransactions(
+    accountId: number,
+    query: TransactionQuery = {},
+): Promise<Paginated<Transaction>> {
+    const res = await api.get<Paginated<Transaction>>(`/accounts/${accountId}/transactions`, {
+        params: {
+            from: query.from || undefined,
+            to: query.to || undefined,
+            per_page: query.perPage,
+            page: query.page,
+        },
+    });
+    return res.data;
+}
+
+/** Kjør reglene på et avgrenset sett (de viste transaksjonene). Returnerer antall oppdatert. */
+export async function applyRulesToTransactions(
+    ids: number[],
+    includeMatched = false,
+): Promise<number> {
+    const res = await api.post<{ updated: number }>('/transactions/apply-rules', {
+        transaction_ids: ids,
+        include_matched: includeMatched,
+    });
+    return res.data.updated;
 }
 
 export interface NewTransaction {
@@ -306,9 +336,4 @@ export async function deleteRule(id: number): Promise<void> {
 
 export async function reorderRules(rules: { id: number; priority: number }[]): Promise<void> {
     await api.put('/rules/reorder', { rules });
-}
-
-export async function reapplyRules(): Promise<number> {
-    const res = await api.post<{ updated: number }>('/rules/reapply');
-    return res.data.updated;
 }

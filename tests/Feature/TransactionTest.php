@@ -49,6 +49,25 @@ class TransactionTest extends TestCase
             ->assertJsonPath('data.1.payee', 'Eldst');
     }
 
+    public function test_filtrerer_paa_dato_og_sidestorrelse(): void
+    {
+        $account = Account::factory()->create();
+        Transaction::factory()->for($account)->create(['date' => '2026-01-15']);
+        Transaction::factory()->for($account)->create(['date' => '2026-03-15']);
+        Transaction::factory()->for($account)->create(['date' => '2026-06-15']);
+
+        $this->getJson("/api/accounts/{$account->id}/transactions?from=2026-02-01&to=2026-05-01")
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.date', '2026-03-15');
+
+        $this->getJson("/api/accounts/{$account->id}/transactions?per_page=2")
+            ->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('meta.per_page', 2)
+            ->assertJsonPath('meta.total', 3);
+    }
+
     public function test_oppdaterer_transaksjon(): void
     {
         $tx = Transaction::factory()->create(['payee' => 'Feil', 'cleared' => false]);

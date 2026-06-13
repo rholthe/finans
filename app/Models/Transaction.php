@@ -19,6 +19,7 @@ class Transaction extends Model
         'external_id',
         'bank_description',
         'rule_id',
+        'locked',
         'date',
         'amount',
         'payee',
@@ -37,6 +38,7 @@ class Transaction extends Model
             'amount' => 'decimal:2',
             'cleared' => 'boolean',
             'is_starting_balance' => 'boolean',
+            'locked' => 'boolean',
         ];
     }
 
