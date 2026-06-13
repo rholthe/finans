@@ -120,3 +120,31 @@ export const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
     credit: 'Kredittkort',
     loan: 'Lån',
 };
+
+export interface Institution {
+    id: string;
+    name: string;
+    logo?: string;
+}
+
+export interface BankAccountLink {
+    id: number;
+    external_id: string;
+    iban: string | null;
+    account_id: number | null;
+    ignored: boolean;
+}
+
+export interface BankConnection {
+    id: number;
+    name: string;
+    institution_id: string;
+    status: string; // GoCardless requisition-status (LN = linket)
+    accounts: BankAccountLink[];
+}
+
+export interface SyncResult {
+    status: string;
+    imported_count: number;
+    report: { status: string; message: string }[];
+}

@@ -28,6 +28,9 @@ export default function Layout({ children }: { children: ReactNode }) {
                             <NavLink to="/kontoer" className={navClass}>
                                 Kontoer
                             </NavLink>
+                            <NavLink to="/bank" className={navClass}>
+                                Bank
+                            </NavLink>
                         </nav>
                     </div>
                     <button

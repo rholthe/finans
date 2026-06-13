@@ -3,13 +3,16 @@ import api from './api';
 import type {
     Account,
     AccountType,
+    BankConnection,
     BudgetMonth,
     Category,
     CategoryGroup,
     Goal,
     GoalType,
+    Institution,
     ScheduledTransaction,
     ScheduleFrequency,
+    SyncResult,
     Transaction,
 } from '@/types';
 
@@ -231,4 +234,38 @@ export async function updateScheduledTransaction(
 
 export async function deleteScheduledTransaction(id: number): Promise<void> {
     await api.delete(`/scheduled-transactions/${id}`);
+}
+
+// --- Bankintegrasjon ---
+
+export async function listInstitutions(): Promise<Institution[]> {
+    const res = await api.get<Institution[]>('/bank/institutions');
+    return res.data;
+}
+
+export async function listBankConnections(): Promise<BankConnection[]> {
+    const res = await api.get<Wrapped<BankConnection[]>>('/bank/connections');
+    return res.data.data;
+}
+
+/** Returnerer samtykke-lenken brukeren skal sendes til (window.location). */
+export async function connectBank(institutionId: string): Promise<string> {
+    const res = await api.post<{ link: string }>('/bank/connect', { institution_id: institutionId });
+    return res.data.link;
+}
+
+export async function linkBankAccount(
+    id: number,
+    payload: { account_id?: number | null; ignored?: boolean },
+): Promise<void> {
+    await api.put(`/bank/accounts/${id}`, payload);
+}
+
+export async function deleteBankConnection(id: number): Promise<void> {
+    await api.delete(`/bank/connections/${id}`);
+}
+
+export async function syncBank(): Promise<SyncResult> {
+    const res = await api.post<SyncResult>('/bank/sync');
+    return res.data;
 }

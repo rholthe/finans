@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AccountController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\BankController;
 use App\Http\Controllers\BudgetController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CategoryGroupController;
@@ -47,6 +48,15 @@ Route::prefix('api')->group(function () {
             ->where('month', '\d{4}-\d{2}');
         Route::post('budget/{month}/auto-assign', [BudgetController::class, 'autoAssign'])
             ->where('month', '\d{4}-\d{2}');
+
+        // Bankintegrasjon (GoCardless bak BankDataProvider)
+        Route::get('bank/institutions', [BankController::class, 'institutions']);
+        Route::get('bank/connections', [BankController::class, 'connections']);
+        Route::post('bank/connect', [BankController::class, 'connect']);
+        Route::get('bank/callback', [BankController::class, 'callback']);
+        Route::put('bank/accounts/{bankAccount}', [BankController::class, 'linkAccount']);
+        Route::delete('bank/connections/{bankConnection}', [BankController::class, 'deleteConnection']);
+        Route::post('bank/sync', [BankController::class, 'sync']);
     });
 });
 

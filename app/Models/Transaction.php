@@ -16,6 +16,7 @@ class Transaction extends Model
         'account_id',
         'category_id',
         'scheduled_transaction_id',
+        'external_id',
         'date',
         'amount',
         'payee',
