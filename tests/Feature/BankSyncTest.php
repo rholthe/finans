@@ -103,6 +103,32 @@ class BankSyncTest extends TestCase
         ]);
     }
 
+    public function test_to_kontoer_med_samme_external_id_importeres_begge(): void
+    {
+        // Sandbox returnerer identiske transaksjoner for hver konto – dedup må
+        // være per konto, ikke global.
+        $account1 = Account::factory()->create();
+        $account2 = Account::factory()->create();
+        $connection = BankConnection::create([
+            'institution_id' => 'SANDBOXFINANCE_SFIN0000',
+            'name' => 'Sandbox',
+            'requisition_id' => 'req1',
+            'status' => 'LN',
+        ]);
+        $this->provider->requisitions['req1'] = ['status' => 'LN', 'accounts' => ['acc1', 'acc2']];
+        $connection->bankAccounts()->create(['account_id' => $account1->id, 'external_id' => 'acc1']);
+        $connection->bankAccounts()->create(['account_id' => $account2->id, 'external_id' => 'acc2']);
+
+        $this->provider->transactions['acc1'] = [$this->tx('shared-1', -300), $this->tx('shared-2', 500)];
+        $this->provider->transactions['acc2'] = [$this->tx('shared-1', -300), $this->tx('shared-2', 500)];
+
+        $event = $this->sync();
+
+        $this->assertSame(4, $event->imported_count);
+        $this->assertDatabaseHas('transactions', ['account_id' => $account1->id, 'external_id' => 'shared-1']);
+        $this->assertDatabaseHas('transactions', ['account_id' => $account2->id, 'external_id' => 'shared-1']);
+    }
+
     public function test_dedupliserer_allerede_importerte(): void
     {
         $bankAccount = $this->linkedAccount();

@@ -48,10 +48,17 @@ class BankSyncService
                 $this->line('info', __('Ingen tilkoblede banker.'));
             }
 
-            // Globalt dedup-sett (external_id er unik hos leverandøren).
-            $seen = array_flip(
-                Transaction::whereNotNull('external_id')->pluck('external_id')->all()
-            );
+            // Dedup-sett per budsjettkonto («account_id:external_id»). Samme
+            // external_id kan gjelde ulike kontoer (sandbox gjenbruker dem, og
+            // generelt hører en transaksjon til én konto), så dedup må være
+            // kontospesifikk – ikke global.
+            $seen = [];
+            Transaction::query()
+                ->whereNotNull('external_id')
+                ->get(['account_id', 'external_id'])
+                ->each(function (Transaction $t) use (&$seen): void {
+                    $seen[$t->account_id.':'.$t->external_id] = 1;
+                });
 
             foreach ($connections as $connection) {
                 $this->syncConnection($connection, $dateFrom, $seen);
@@ -150,7 +157,8 @@ class BankSyncService
 
         $newCount = 0;
         foreach ($transactions as $transaction) {
-            if (isset($seen[$transaction->externalId])) {
+            $key = $bankAccount->account_id.':'.$transaction->externalId;
+            if (isset($seen[$key])) {
                 continue;
             }
 
@@ -169,7 +177,7 @@ class BankSyncService
                 'cleared' => true,
             ]);
 
-            $seen[$transaction->externalId] = 1;
+            $seen[$key] = 1;
             $this->imported++;
             $newCount++;
         }
