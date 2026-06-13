@@ -6,6 +6,8 @@ use App\Mail\SyncReportMail;
 use App\Models\Account;
 use App\Models\BankAccount;
 use App\Models\BankConnection;
+use App\Models\Category;
+use App\Models\Rule;
 use App\Models\SyncEvent;
 use App\Models\Transaction;
 use App\Services\Bank\BankDataProvider;
@@ -34,7 +36,7 @@ class BankSyncTest extends TestCase
 
     private function tx(string $id, float $amount, string $date = '2026-01-10', string $payee = 'Butikk'): NormalizedTransaction
     {
-        return new NormalizedTransaction($id, $date, $amount, 'NOK', $payee, $payee, ['internalTransactionId' => $id]);
+        return new NormalizedTransaction($id, $date, $amount, 'NOK', $payee, $payee, $payee, ['internalTransactionId' => $id]);
     }
 
     private function linkedAccount(): BankAccount
@@ -78,6 +80,27 @@ class BankSyncTest extends TestCase
             'amount' => -300,
         ]);
         Mail::assertSent(SyncReportMail::class);
+    }
+
+    public function test_regel_setter_payee_og_kategori_ved_import(): void
+    {
+        $bankAccount = $this->linkedAccount();
+        $category = Category::factory()->create();
+        Rule::factory()->create([
+            'match_contains' => 'REMA',
+            'set_payee' => 'Rema 1000',
+            'category_id' => $category->id,
+        ]);
+        $this->provider->transactions['acc1'] = [$this->tx('tx-1', -250, '2026-01-10', 'KORTKJØP REMA 1000')];
+
+        $this->sync();
+
+        $this->assertDatabaseHas('transactions', [
+            'external_id' => 'tx-1',
+            'payee' => 'Rema 1000',
+            'category_id' => $category->id,
+            'bank_description' => 'KORTKJØP REMA 1000',
+        ]);
     }
 
     public function test_dedupliserer_allerede_importerte(): void

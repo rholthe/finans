@@ -107,8 +107,9 @@ class GoCardlessProvider implements BankDataProvider
             date: $this->resolveDate($raw),
             amount: (float) data_get($raw, 'transactionAmount.amount', 0),
             currency: (string) data_get($raw, 'transactionAmount.currency', 'NOK'),
+            description: $info,
             payee: Str::limit($info, 255, ''),
-            memo: Str::limit($info, 500, ''),
+            memo: $info,
             raw: $raw,
         );
     }

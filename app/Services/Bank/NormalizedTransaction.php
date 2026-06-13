@@ -12,6 +12,7 @@ readonly class NormalizedTransaction
      * @param  string  $externalId  Leverandørens unike id (for deduplisering)
      * @param  string  $date  YYYY-MM-DD
      * @param  float  $amount  Signert: positiv = inn, negativ = ut
+     * @param  string  $description  Full info-tekst (matchegrunnlag for regelmotoren)
      * @param  array<string, mixed>  $raw  Rådata fra leverandøren
      */
     public function __construct(
@@ -19,6 +20,7 @@ readonly class NormalizedTransaction
         public string $date,
         public float $amount,
         public string $currency,
+        public string $description,
         public ?string $payee,
         public ?string $memo,
         public array $raw = [],

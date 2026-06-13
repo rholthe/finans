@@ -10,6 +10,8 @@ import type {
     Goal,
     GoalType,
     Institution,
+    Rule,
+    RuleApplies,
     ScheduledTransaction,
     ScheduleFrequency,
     SyncResult,
@@ -268,4 +270,45 @@ export async function deleteBankConnection(id: number): Promise<void> {
 export async function syncBank(): Promise<SyncResult> {
     const res = await api.post<SyncResult>('/bank/sync');
     return res.data;
+}
+
+// --- Regelmotor ---
+
+export interface RuleInput {
+    name?: string | null;
+    match_contains: string;
+    match_not_contains?: string | null;
+    applies_to?: RuleApplies;
+    set_payee?: string | null;
+    set_memo?: string | null;
+    category_id?: number | null;
+    active?: boolean;
+}
+
+export async function listRules(): Promise<Rule[]> {
+    const res = await api.get<Wrapped<Rule[]>>('/rules');
+    return res.data.data;
+}
+
+export async function createRule(payload: RuleInput): Promise<Rule> {
+    const res = await api.post<Wrapped<Rule>>('/rules', payload);
+    return res.data.data;
+}
+
+export async function updateRule(id: number, payload: Partial<RuleInput>): Promise<Rule> {
+    const res = await api.patch<Wrapped<Rule>>(`/rules/${id}`, payload);
+    return res.data.data;
+}
+
+export async function deleteRule(id: number): Promise<void> {
+    await api.delete(`/rules/${id}`);
+}
+
+export async function reorderRules(rules: { id: number; priority: number }[]): Promise<void> {
+    await api.put('/rules/reorder', { rules });
+}
+
+export async function reapplyRules(): Promise<number> {
+    const res = await api.post<{ updated: number }>('/rules/reapply');
+    return res.data.updated;
 }

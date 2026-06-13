@@ -4,6 +4,7 @@ import Login from '@/pages/Login';
 import Budget from '@/pages/Budget';
 import Planlagte from '@/pages/Planlagte';
 import Bank from '@/pages/Bank';
+import Regler from '@/pages/Regler';
 import Accounts from '@/pages/Accounts';
 import AccountDetail from '@/pages/AccountDetail';
 import type { ReactNode } from 'react';
@@ -36,6 +37,7 @@ export default function App() {
                     <Route path="/planlagte" element={<RequireAuth><Planlagte /></RequireAuth>} />
                     <Route path="/kontoer" element={<RequireAuth><Accounts /></RequireAuth>} />
                     <Route path="/bank" element={<RequireAuth><Bank /></RequireAuth>} />
+                    <Route path="/regler" element={<RequireAuth><Regler /></RequireAuth>} />
                     <Route path="/accounts/:id" element={<RequireAuth><AccountDetail /></RequireAuth>} />
                     <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>

@@ -7,6 +7,7 @@ use App\Models\BankAccount;
 use App\Models\BankConnection;
 use App\Models\SyncEvent;
 use App\Models\Transaction;
+use App\Services\Rules\RuleEngine;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Throwable;
@@ -25,7 +26,10 @@ class BankSyncService
 
     private bool $hasErrors = false;
 
-    public function __construct(private readonly BankDataProvider $provider) {}
+    public function __construct(
+        private readonly BankDataProvider $provider,
+        private readonly RuleEngine $rules,
+    ) {}
 
     public function sync(): SyncEvent
     {
@@ -150,14 +154,18 @@ class BankSyncService
                 continue;
             }
 
+            $rule = $this->rules->apply($transaction->description, $transaction->amount);
+
             Transaction::create([
                 'account_id' => $bankAccount->account_id,
-                'category_id' => null, // kategorisering (regelmotor) kommer i senere fase
+                'category_id' => $rule->categoryId,
                 'external_id' => $transaction->externalId,
+                'bank_description' => $transaction->description,
+                'rule_id' => $rule->ruleId,
                 'date' => $transaction->date,
                 'amount' => $transaction->amount,
-                'payee' => $transaction->payee,
-                'memo' => $transaction->memo,
+                'payee' => $rule->payee ?? $transaction->payee,
+                'memo' => $rule->memo ?? $transaction->memo,
                 'cleared' => true,
             ]);
 

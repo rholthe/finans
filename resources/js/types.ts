@@ -15,12 +15,35 @@ export interface Transaction {
     id: number;
     account_id: number;
     category_id: number | null;
+    rule_id: number | null;
     date: string; // YYYY-MM-DD
     amount: number; // signert: positiv = inn, negativ = ut
     payee: string | null;
     memo: string | null;
     cleared: boolean;
     is_starting_balance: boolean;
+}
+
+export type RuleApplies = 'both' | 'inflow' | 'outflow';
+
+export const APPLIES_TO_LABELS: Record<RuleApplies, string> = {
+    both: 'Inn og ut',
+    inflow: 'Kun inn',
+    outflow: 'Kun ut',
+};
+
+export interface Rule {
+    id: number;
+    name: string | null;
+    priority: number;
+    active: boolean;
+    match_contains: string | null;
+    match_not_contains: string | null;
+    applies_to: RuleApplies;
+    set_payee: string | null;
+    set_memo: string | null;
+    category_id: number | null;
+    last_applied_at: string | null;
 }
 
 export interface Category {

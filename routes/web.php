@@ -7,6 +7,7 @@ use App\Http\Controllers\BudgetController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CategoryGroupController;
 use App\Http\Controllers\GoalController;
+use App\Http\Controllers\RuleController;
 use App\Http\Controllers\ScheduledTransactionController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Middleware\EnsureScheduledTransactionsPosted;
@@ -48,6 +49,11 @@ Route::prefix('api')->group(function () {
             ->where('month', '\d{4}-\d{2}');
         Route::post('budget/{month}/auto-assign', [BudgetController::class, 'autoAssign'])
             ->where('month', '\d{4}-\d{2}');
+
+        // Regelmotor (payee/memo/kategori) – leverandøruavhengig
+        Route::put('rules/reorder', [RuleController::class, 'reorder']);
+        Route::post('rules/reapply', [RuleController::class, 'reapply']);
+        Route::apiResource('rules', RuleController::class)->only(['index', 'store', 'update', 'destroy']);
 
         // Bankintegrasjon (GoCardless bak BankDataProvider)
         Route::get('bank/institutions', [BankController::class, 'institutions']);

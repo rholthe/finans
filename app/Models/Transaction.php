@@ -17,6 +17,8 @@ class Transaction extends Model
         'category_id',
         'scheduled_transaction_id',
         'external_id',
+        'bank_description',
+        'rule_id',
         'date',
         'amount',
         'payee',
@@ -60,5 +62,13 @@ class Transaction extends Model
     public function scheduledTransaction(): BelongsTo
     {
         return $this->belongsTo(ScheduledTransaction::class);
+    }
+
+    /**
+     * @return BelongsTo<Rule, $this>
+     */
+    public function rule(): BelongsTo
+    {
+        return $this->belongsTo(Rule::class);
     }
 }

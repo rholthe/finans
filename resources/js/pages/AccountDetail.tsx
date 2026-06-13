@@ -112,7 +112,19 @@ export default function AccountDetail() {
                                     <td className="whitespace-nowrap px-4 py-2 text-neutral-600">
                                         {formatDate(tx.date)}
                                     </td>
-                                    <td className="px-4 py-2">{tx.payee ?? '—'}</td>
+                                    <td className="px-4 py-2">
+                                        <span className="flex items-center gap-1.5">
+                                            {tx.payee ?? '—'}
+                                            {tx.rule_id && (
+                                                <span
+                                                    title="Satt automatisk av en regel"
+                                                    className="rounded bg-neutral-100 px-1 py-0.5 text-[10px] font-medium uppercase text-neutral-400"
+                                                >
+                                                    auto
+                                                </span>
+                                            )}
+                                        </span>
+                                    </td>
                                     <td className="px-4 py-2 text-neutral-500">{tx.memo ?? ''}</td>
                                     <td className="px-4 py-2 text-center">
                                         <button
