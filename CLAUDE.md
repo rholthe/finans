@@ -114,7 +114,11 @@ Scheduleren kjører nattlig banksynk og postering av planlagte transaksjoner (se
    - ✅ Avstemming (reconciliation)
    - ✅ Rapporter (forbruk per kategori, inntekt/forbruk, kategoritrend, nettoformue – Recharts)
    - ✅ 2. bankleverandør (Enable Banking; normalisert consent-grensesnitt + provider-kolonne)
-9. ⬜ Tverrgående: design/UX-polish + brukertilbakemeldinger (tas til slutt)
+9. 🟡 Tverrgående: design/UX-polish + brukertilbakemeldinger (side for side)
+   - Konvensjon: inkrementell polish (ikke full redesign), desktop-først med
+     grasiøs degradering, bulk-handlinger deaktiveres når ingenting er valgt
+   - ✅ Budsjettsiden: seleksjon (avkrysning per kategori/gruppe/alle), avgrenset
+     auto-allokering + bulk-flytt/nullstill, sticky header, badges, polish
 
 ===
 

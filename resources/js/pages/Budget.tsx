@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import {
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+    type FormEvent,
+    type ReactNode,
+} from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '@/components/Layout';
 import Modal from '@/components/Modal';
@@ -13,7 +21,9 @@ import {
     getBudget,
     getCategoryActivity,
     moveBudget,
+    resetAssignments,
     setGoal,
+    sweepBudget,
     type AutoAssignStrategy,
     type GoalInput,
 } from '@/lib/data';
@@ -29,11 +39,18 @@ import {
     type GoalType,
 } from '@/types';
 
+// Felles kolonneoppsett for header- og kategorirader (avkrysning · navn · tildelt · aktivitet · tilgjengelig).
+// Smalere tallkolonner på små skjermer (desktop-først, grasiøs degradering).
+const ROW_GRID =
+    'grid grid-cols-[1.25rem_minmax(0,1fr)_5rem_5rem_5.5rem] sm:grid-cols-[1.25rem_minmax(0,1fr)_8rem_8rem_8rem] items-center gap-2';
+
 export default function Budget() {
     const [month, setMonth] = useState(currentMonth());
     const [budget, setBudget] = useState<BudgetMonth | null>(null);
     const [loading, setLoading] = useState(true);
     const [autoBusy, setAutoBusy] = useState(false);
+    const [selected, setSelected] = useState<Set<number>>(new Set());
+    const [showBulkMove, setShowBulkMove] = useState(false);
 
     const reload = useCallback(() => {
         return getBudget(month).then(setBudget);
@@ -43,6 +60,47 @@ export default function Budget() {
         setLoading(true);
         reload().finally(() => setLoading(false));
     }, [reload]);
+
+    // Nullstill seleksjonen ved månedsbytte.
+    useEffect(() => setSelected(new Set()), [month]);
+
+    const allCategoryIds = useMemo(
+        () => (budget ? budget.groups.flatMap((g) => g.categories.map((c) => c.id)) : []),
+        [budget],
+    );
+    const selectedCats = useMemo(
+        () => (budget ? budget.groups.flatMap((g) => g.categories).filter((c) => selected.has(c.id)) : []),
+        [budget, selected],
+    );
+
+    const fundNeeded = selectedCats.reduce((s, c) => s + (c.goal ? c.needed : 0), 0);
+    const coverNeeded = selectedCats.reduce((s, c) => s + Math.max(0, -c.projected_available), 0);
+
+    function toggleCategory(id: number) {
+        setSelected((prev) => {
+            const next = new Set(prev);
+            next.has(id) ? next.delete(id) : next.add(id);
+            return next;
+        });
+    }
+
+    function toggleGroup(group: BudgetGroup) {
+        const ids = group.categories.map((c) => c.id);
+        const allSelected = ids.length > 0 && ids.every((id) => selected.has(id));
+        setSelected((prev) => {
+            const next = new Set(prev);
+            ids.forEach((id) => (allSelected ? next.delete(id) : next.add(id)));
+            return next;
+        });
+    }
+
+    function toggleAll() {
+        setSelected((prev) =>
+            prev.size === allCategoryIds.length && allCategoryIds.length > 0
+                ? new Set()
+                : new Set(allCategoryIds),
+        );
+    }
 
     async function addGroup() {
         const name = prompt('Navn på kategorigruppe?')?.trim();
@@ -54,7 +112,7 @@ export default function Budget() {
     async function runAutoAssign(strategy: AutoAssignStrategy) {
         setAutoBusy(true);
         try {
-            setBudget(await autoAssign(month, strategy));
+            setBudget(await autoAssign(month, strategy, Array.from(selected)));
         } catch (e) {
             console.error(apiErrorMessage(e, 'Auto-allokering feilet.'));
         } finally {
@@ -62,13 +120,35 @@ export default function Budget() {
         }
     }
 
+    async function runReset() {
+        if (!confirm(`Nullstille tildelingen for ${selected.size} kategori(er) denne måneden?`)) return;
+        setAutoBusy(true);
+        try {
+            setBudget(await resetAssignments(month, Array.from(selected)));
+        } catch (e) {
+            console.error(apiErrorMessage(e, 'Kunne ikke nullstille tildeling.'));
+        } finally {
+            setAutoBusy(false);
+        }
+    }
+
     const hasCategories = !!budget && budget.groups.some((g) => g.categories.length > 0);
+    const noneSelected = selected.size === 0;
+    const allSelected = allCategoryIds.length > 0 && selected.size === allCategoryIds.length;
 
     return (
         <Layout>
             <div className="flex items-center justify-between">
                 <h1 className="text-2xl font-semibold">Budsjett</h1>
                 <div className="flex items-center gap-1">
+                    {month !== currentMonth() && (
+                        <button
+                            onClick={() => setMonth(currentMonth())}
+                            className="mr-1 rounded-lg px-2 py-1.5 text-xs font-medium text-neutral-500 hover:bg-neutral-100"
+                        >
+                            I dag
+                        </button>
+                    )}
                     <button
                         onClick={() => setMonth((m) => shiftMonth(m, -1))}
                         className="rounded-lg px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-100"
@@ -98,21 +178,28 @@ export default function Budget() {
             )}
 
             {hasCategories && (
-                <div className="mt-3 flex gap-2">
-                    <button
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-medium text-neutral-400">
+                        {noneSelected ? 'Velg kategorier' : `${selected.size} valgt`}
+                    </span>
+                    <ActionButton
                         onClick={() => runAutoAssign('fund-goals')}
-                        disabled={autoBusy}
-                        className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-50"
+                        disabled={autoBusy || noneSelected || fundNeeded <= 0}
                     >
-                        Fyll opp mål
-                    </button>
-                    <button
+                        Fyll opp mål{fundNeeded > 0 && noneSelected === false ? ` (${formatNok(fundNeeded)})` : ''}
+                    </ActionButton>
+                    <ActionButton
                         onClick={() => runAutoAssign('cover-overspending')}
-                        disabled={autoBusy}
-                        className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-50"
+                        disabled={autoBusy || noneSelected || coverNeeded <= 0}
                     >
-                        Dekk overtrekk
-                    </button>
+                        Dekk overtrekk{coverNeeded > 0 && noneSelected === false ? ` (${formatNok(coverNeeded)})` : ''}
+                    </ActionButton>
+                    <ActionButton onClick={() => setShowBulkMove(true)} disabled={autoBusy || noneSelected}>
+                        Flytt valgte
+                    </ActionButton>
+                    <ActionButton onClick={runReset} disabled={autoBusy || noneSelected}>
+                        Nullstill tildeling
+                    </ActionButton>
                 </div>
             )}
 
@@ -130,8 +217,16 @@ export default function Budget() {
                 </div>
             ) : (
                 <>
-                    <div className="mt-6 overflow-hidden rounded-xl border border-neutral-200 bg-white">
-                        <div className="grid grid-cols-[1fr_8rem_8rem_8rem] gap-2 border-b border-neutral-200 bg-neutral-50 px-4 py-2 text-xs font-medium uppercase tracking-wide text-neutral-500">
+                    <div className="mt-6 rounded-xl border border-neutral-200 bg-white">
+                        <div
+                            className={`${ROW_GRID} sticky top-0 z-10 rounded-t-xl border-b border-neutral-200 bg-neutral-50 px-4 py-2 text-xs font-medium uppercase tracking-wide text-neutral-500`}
+                        >
+                            <TriCheckbox
+                                checked={allSelected}
+                                indeterminate={selected.size > 0 && !allSelected}
+                                onChange={toggleAll}
+                                ariaLabel="Velg alle kategorier"
+                            />
                             <span>Kategori</span>
                             <span className="text-right">Tildelt</span>
                             <span className="text-right">Aktivitet</span>
@@ -143,6 +238,9 @@ export default function Budget() {
                                 group={group}
                                 allGroups={budget.groups}
                                 month={month}
+                                selected={selected}
+                                onToggleCategory={toggleCategory}
+                                onToggleGroup={toggleGroup}
                                 onChange={setBudget}
                                 reload={reload}
                             />
@@ -156,7 +254,67 @@ export default function Budget() {
                     </button>
                 </>
             )}
+
+            {showBulkMove && budget && (
+                <BulkMoveModal
+                    sources={selectedCats}
+                    allGroups={budget.groups}
+                    month={month}
+                    onMoved={(updated) => {
+                        setBudget(updated);
+                        setShowBulkMove(false);
+                    }}
+                    onClose={() => setShowBulkMove(false)}
+                />
+            )}
         </Layout>
+    );
+}
+
+function ActionButton({
+    onClick,
+    disabled,
+    children,
+}: {
+    onClick: () => void;
+    disabled?: boolean;
+    children: ReactNode;
+}) {
+    return (
+        <button
+            onClick={onClick}
+            disabled={disabled}
+            className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+            {children}
+        </button>
+    );
+}
+
+function TriCheckbox({
+    checked,
+    indeterminate,
+    onChange,
+    ariaLabel,
+}: {
+    checked: boolean;
+    indeterminate?: boolean;
+    onChange: () => void;
+    ariaLabel: string;
+}) {
+    const ref = useRef<HTMLInputElement>(null);
+    useEffect(() => {
+        if (ref.current) ref.current.indeterminate = indeterminate ?? false;
+    }, [indeterminate]);
+    return (
+        <input
+            ref={ref}
+            type="checkbox"
+            checked={checked}
+            onChange={onChange}
+            aria-label={ariaLabel}
+            className="h-4 w-4 cursor-pointer rounded border-neutral-300 text-neutral-900 focus:ring-neutral-400"
+        />
     );
 }
 
@@ -172,13 +330,16 @@ function ReadyToAssign({
     const positive = amount >= 0;
     return (
         <div
-            className={`mt-4 rounded-xl px-5 py-4 ${
-                positive ? 'bg-green-50 text-green-900' : 'bg-red-50 text-red-900'
+            className={`mt-4 rounded-xl px-5 py-4 ring-1 ${
+                positive ? 'bg-green-50 text-green-900 ring-green-100' : 'bg-red-50 text-red-900 ring-red-100'
             }`}
         >
             <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Klar til å fordele</span>
-                <span className="text-xl font-semibold tabular-nums">{formatNok(amount)}</span>
+                <span className="flex items-center gap-2 text-sm font-medium">
+                    <span aria-hidden>{positive ? '💰' : '⚠️'}</span>
+                    Klar til å fordele
+                </span>
+                <span className="text-2xl font-semibold tabular-nums">{formatNok(amount)}</span>
             </div>
             {upcomingIncome !== 0 && (
                 <div className="mt-1 flex items-center justify-between text-xs opacity-80">
@@ -194,17 +355,27 @@ function Group({
     group,
     allGroups,
     month,
+    selected,
+    onToggleCategory,
+    onToggleGroup,
     onChange,
     reload,
 }: {
     group: BudgetGroup;
     allGroups: BudgetGroup[];
     month: string;
+    selected: Set<number>;
+    onToggleCategory: (id: number) => void;
+    onToggleGroup: (group: BudgetGroup) => void;
     onChange: (budget: BudgetMonth) => void;
     reload: () => void;
 }) {
     const [adding, setAdding] = useState(false);
     const [name, setName] = useState('');
+
+    const ids = group.categories.map((c) => c.id);
+    const selCount = ids.filter((id) => selected.has(id)).length;
+    const allSel = ids.length > 0 && selCount === ids.length;
 
     async function submit(e: FormEvent) {
         e.preventDefault();
@@ -218,8 +389,14 @@ function Group({
 
     return (
         <div className="border-b border-neutral-100 last:border-0">
-            <div className="flex items-center justify-between bg-neutral-50/60 px-4 py-2">
-                <span className="text-sm font-semibold text-neutral-700">{group.name}</span>
+            <div className="flex items-center gap-2 bg-neutral-50/60 px-4 py-2">
+                <TriCheckbox
+                    checked={allSel}
+                    indeterminate={selCount > 0 && !allSel}
+                    onChange={() => onToggleGroup(group)}
+                    ariaLabel={`Velg gruppen ${group.name}`}
+                />
+                <span className="flex-1 truncate text-sm font-semibold text-neutral-700">{group.name}</span>
                 <span className="text-sm font-medium tabular-nums text-neutral-500">
                     {formatNok(group.available)}
                 </span>
@@ -231,6 +408,8 @@ function Group({
                     category={category}
                     allGroups={allGroups}
                     month={month}
+                    selected={selected.has(category.id)}
+                    onToggle={() => onToggleCategory(category.id)}
                     onChange={onChange}
                     reload={reload}
                 />
@@ -272,24 +451,28 @@ function goalSummary(goal: Goal): string {
     }
 }
 
-function availableClass(category: BudgetCategory): string {
+function availableBadge(category: BudgetCategory): string {
     // Rød ved faktisk overtrekk, eller når kommende regninger vil overtrekke.
-    if (category.available < 0 || category.projected_available < 0) return 'text-red-600';
-    if (category.goal && category.needed > 0) return 'text-amber-600';
-    if (category.goal && category.needed === 0) return 'text-green-700';
-    return 'text-neutral-900';
+    if (category.available < 0 || category.projected_available < 0) return 'bg-red-50 text-red-700';
+    if (category.goal && category.needed > 0) return 'bg-amber-50 text-amber-700';
+    if (category.goal && category.needed === 0) return 'bg-green-50 text-green-700';
+    return 'bg-neutral-100 text-neutral-600';
 }
 
 function CategoryRow({
     category,
     allGroups,
     month,
+    selected,
+    onToggle,
     onChange,
     reload,
 }: {
     category: BudgetCategory;
     allGroups: BudgetGroup[];
     month: string;
+    selected: boolean;
+    onToggle: () => void;
     onChange: (budget: BudgetMonth) => void;
     reload: () => void;
 }) {
@@ -303,7 +486,8 @@ function CategoryRow({
 
     return (
         <div className="border-b border-neutral-50 last:border-0">
-            <div className="grid grid-cols-[1fr_8rem_8rem_8rem] items-center gap-2 px-4 py-1.5 hover:bg-neutral-50">
+            <div className={`${ROW_GRID} px-4 py-1.5 ${selected ? 'bg-neutral-50' : 'hover:bg-neutral-50'}`}>
+                <TriCheckbox checked={selected} onChange={onToggle} ariaLabel={`Velg ${category.name}`} />
                 <div className="min-w-0">
                     <div className="flex items-center gap-2">
                         <span className="truncate text-sm">{category.name}</span>
@@ -369,14 +553,16 @@ function CategoryRow({
                 >
                     {formatNok(category.activity)}
                 </button>
-                <button
-                    type="button"
-                    onClick={() => setShowMove(true)}
-                    title="Flytt penger til en annen kategori"
-                    className={`w-full rounded px-1 text-right text-sm font-medium tabular-nums hover:bg-neutral-100 ${availableClass(category)}`}
-                >
-                    {formatNok(category.available)}
-                </button>
+                <div className="flex justify-end">
+                    <button
+                        type="button"
+                        onClick={() => setShowMove(true)}
+                        title="Flytt penger til en annen kategori"
+                        className={`rounded-full px-2.5 py-0.5 text-sm font-medium tabular-nums hover:ring-2 hover:ring-neutral-200 ${availableBadge(category)}`}
+                    >
+                        {formatNok(category.available)}
+                    </button>
+                </div>
             </div>
 
             {editingGoal && (
@@ -571,24 +757,12 @@ function MoveModal({
                     </label>
                     <label className="block text-xs font-medium text-neutral-600">
                         Til kategori
-                        <select
+                        <CategorySelect
+                            groups={allGroups}
                             value={target}
-                            onChange={(e) => setTarget(e.target.value)}
-                            className="mt-1 block w-full rounded-lg border border-neutral-300 px-2 py-1.5 text-sm focus:border-neutral-900 focus:outline-none"
-                        >
-                            <option value="">Velg …</option>
-                            {allGroups.map((group) => (
-                                <optgroup key={group.id} label={group.name}>
-                                    {group.categories
-                                        .filter((c) => c.id !== category.id)
-                                        .map((c) => (
-                                            <option key={c.id} value={c.id}>
-                                                {c.name}
-                                            </option>
-                                        ))}
-                                </optgroup>
-                            ))}
-                        </select>
+                            onChange={setTarget}
+                            exclude={new Set([category.id])}
+                        />
                     </label>
 
                     {error && <p className="text-sm text-red-600">{error}</p>}
@@ -612,6 +786,123 @@ function MoveModal({
                 </form>
             )}
         </Modal>
+    );
+}
+
+function BulkMoveModal({
+    sources,
+    allGroups,
+    month,
+    onMoved,
+    onClose,
+}: {
+    sources: BudgetCategory[];
+    allGroups: BudgetGroup[];
+    month: string;
+    onMoved: (budget: BudgetMonth) => void;
+    onClose: () => void;
+}) {
+    const total = sources.reduce((s, c) => s + Math.max(0, c.available), 0);
+    const [target, setTarget] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const sourceIds = new Set(sources.map((s) => s.id));
+
+    async function submit(e: FormEvent) {
+        e.preventDefault();
+        if (!target) {
+            setError('Velg en målkategori.');
+            return;
+        }
+        setBusy(true);
+        setError(null);
+        try {
+            onMoved(await sweepBudget(month, Array.from(sourceIds), Number(target)));
+        } catch (err) {
+            setError(apiErrorMessage(err, 'Kunne ikke flytte penger.'));
+            setBusy(false);
+        }
+    }
+
+    return (
+        <Modal title={`Flytt fra ${sources.length} kategorier`} onClose={onClose}>
+            {total <= 0 ? (
+                <p className="text-sm text-neutral-500">
+                    Ingen av de valgte kategoriene har tilgjengelige penger å flytte.
+                </p>
+            ) : (
+                <form onSubmit={submit} className="space-y-3">
+                    <p className="text-sm text-neutral-500">
+                        Alt tilgjengelig fra de valgte kategoriene (totalt{' '}
+                        <span className="font-medium tabular-nums">{formatNok(total)}</span>) flyttes til
+                        målkategorien. Valgte kategorier uten tilgjengelig hoppes over.
+                    </p>
+                    <label className="block text-xs font-medium text-neutral-600">
+                        Til kategori
+                        <CategorySelect
+                            groups={allGroups}
+                            value={target}
+                            onChange={setTarget}
+                            exclude={sourceIds}
+                        />
+                    </label>
+
+                    {error && <p className="text-sm text-red-600">{error}</p>}
+
+                    <div className="flex gap-2 pt-1">
+                        <button
+                            type="submit"
+                            disabled={busy}
+                            className="rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+                        >
+                            Flytt
+                        </button>
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-500 hover:bg-neutral-100"
+                        >
+                            Avbryt
+                        </button>
+                    </div>
+                </form>
+            )}
+        </Modal>
+    );
+}
+
+function CategorySelect({
+    groups,
+    value,
+    onChange,
+    exclude,
+}: {
+    groups: BudgetGroup[];
+    value: string;
+    onChange: (value: string) => void;
+    exclude: Set<number>;
+}) {
+    return (
+        <select
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="mt-1 block w-full rounded-lg border border-neutral-300 px-2 py-1.5 text-sm focus:border-neutral-900 focus:outline-none"
+        >
+            <option value="">Velg …</option>
+            {groups.map((group) => {
+                const options = group.categories.filter((c) => !exclude.has(c.id));
+                if (options.length === 0) return null;
+                return (
+                    <optgroup key={group.id} label={group.name}>
+                        {options.map((c) => (
+                            <option key={c.id} value={c.id}>
+                                {c.name}
+                            </option>
+                        ))}
+                    </optgroup>
+                );
+            })}
+        </select>
     );
 }
 

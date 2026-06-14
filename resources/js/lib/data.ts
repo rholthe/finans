@@ -232,8 +232,36 @@ export type AutoAssignStrategy = 'fund-goals' | 'cover-overspending';
 export async function autoAssign(
     month: string,
     strategy: AutoAssignStrategy,
+    categoryIds?: number[],
 ): Promise<BudgetMonth> {
-    const res = await api.post<BudgetMonth>(`/budget/${month}/auto-assign`, { strategy });
+    const res = await api.post<BudgetMonth>(`/budget/${month}/auto-assign`, {
+        strategy,
+        category_ids: categoryIds,
+    });
+    return res.data;
+}
+
+/** Tøm alt tilgjengelig fra et utvalg kategorier over i én målkategori. */
+export async function sweepBudget(
+    month: string,
+    fromCategoryIds: number[],
+    toCategoryId: number,
+): Promise<BudgetMonth> {
+    const res = await api.post<BudgetMonth>(`/budget/${month}/sweep`, {
+        from_category_ids: fromCategoryIds,
+        to_category_id: toCategoryId,
+    });
+    return res.data;
+}
+
+/** Nullstill tildelingen (assigned = 0) for et utvalg kategorier. */
+export async function resetAssignments(
+    month: string,
+    categoryIds: number[],
+): Promise<BudgetMonth> {
+    const res = await api.post<BudgetMonth>(`/budget/${month}/reset-assignments`, {
+        category_ids: categoryIds,
+    });
     return res.data;
 }
 

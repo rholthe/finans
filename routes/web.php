@@ -62,6 +62,10 @@ Route::prefix('api')->group(function () {
             ->where('month', '\d{4}-\d{2}');
         Route::post('budget/{month}/auto-assign', [BudgetController::class, 'autoAssign'])
             ->where('month', '\d{4}-\d{2}');
+        Route::post('budget/{month}/sweep', [BudgetController::class, 'sweep'])
+            ->where('month', '\d{4}-\d{2}');
+        Route::post('budget/{month}/reset-assignments', [BudgetController::class, 'resetAssignments'])
+            ->where('month', '\d{4}-\d{2}');
 
         // Regelmotor (payee/memo/kategori) – leverandøruavhengig.
         // Global re-kjøring finnes kun som CLI (rules:reapply); UI bruker den

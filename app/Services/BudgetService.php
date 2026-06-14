@@ -225,6 +225,56 @@ class BudgetService
     }
 
     /**
+     * Tøm alt tilgjengelig fra et utvalg kildekategorier over i én målkategori
+     * (justerer tildelingene, netto 0). Kilder uten tilgjengelig hoppes over, og
+     * målkategorien kan ikke være sin egen kilde. Returnerer totalt flyttet beløp.
+     *
+     * @param  list<int>  $fromCategoryIds
+     */
+    public function sweepToCategory(array $fromCategoryIds, Category $to, string $month): float
+    {
+        $start = $this->normalizeMonth($month);
+        $moved = 0.0;
+
+        DB::transaction(function () use ($fromCategoryIds, $to, $start, $month, &$moved): void {
+            foreach ($fromCategoryIds as $fromId) {
+                if ((int) $fromId === $to->id) {
+                    continue;
+                }
+
+                $from = Category::find($fromId);
+                if (! $from) {
+                    continue;
+                }
+
+                $available = $this->availableForCategory($from, $month);
+                if ($available <= 0) {
+                    continue;
+                }
+
+                $fromAssigned = (float) (BudgetAllocation::query()
+                    ->where('category_id', $from->id)
+                    ->where('month', $start->toDateString())
+                    ->value('assigned') ?? 0.0);
+
+                $this->assign($from, $month, round($fromAssigned - $available, 2));
+                $moved += $available;
+            }
+
+            if ($moved > 0) {
+                $toAssigned = (float) (BudgetAllocation::query()
+                    ->where('category_id', $to->id)
+                    ->where('month', $start->toDateString())
+                    ->value('assigned') ?? 0.0);
+
+                $this->assign($to, $month, round($toAssigned + $moved, 2));
+            }
+        });
+
+        return round($moved, 2);
+    }
+
+    /**
      * Penger som venter på å bli fordelt = inntekter inn på budsjettkontoer
      * (t.o.m. måneden) minus alt som er tildelt (t.o.m. måneden).
      *

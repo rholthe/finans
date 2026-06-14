@@ -279,4 +279,41 @@ class BudgetTest extends TestCase
             'amount' => 50,
         ])->assertStatus(422);
     }
+
+    public function test_sweep_tommer_valgte_kategorier_til_maalkategori(): void
+    {
+        $a = $this->category();
+        $b = $this->category();
+        $target = $this->category();
+        $this->putJson("/api/budget/2026-01/categories/{$a->id}", ['assigned' => 1000]);
+        $this->putJson("/api/budget/2026-01/categories/{$b->id}", ['assigned' => 500]);
+
+        $this->postJson('/api/budget/2026-01/sweep', [
+            'from_category_ids' => [$a->id, $b->id],
+            'to_category_id' => $target->id,
+        ])->assertOk();
+
+        $response = $this->getJson('/api/budget?month=2026-01')->assertOk();
+        $cats = collect($response->json('groups'))
+            ->flatMap(fn (array $g): array => $g['categories'])
+            ->keyBy('id');
+
+        $this->assertEquals(0, $cats[$a->id]['available']);
+        $this->assertEquals(0, $cats[$b->id]['available']);
+        $this->assertEquals(1500, $cats[$target->id]['available']);
+        // Netto tildeling uendret (1500) → Ready to Assign uberørt.
+        $response->assertJsonPath('ready_to_assign', -1500);
+    }
+
+    public function test_nullstill_tildeling_for_valgte(): void
+    {
+        $a = $this->category();
+        $this->putJson("/api/budget/2026-01/categories/{$a->id}", ['assigned' => 1000]);
+
+        $this->postJson('/api/budget/2026-01/reset-assignments', ['category_ids' => [$a->id]])
+            ->assertOk()
+            ->assertJsonPath('groups.0.categories.0.assigned', 0);
+
+        $this->assertDatabaseHas('budget_allocations', ['category_id' => $a->id, 'assigned' => 0]);
+    }
 }

@@ -19,19 +19,26 @@ class GoalService
 
     /**
      * Fordel tilgjengelige midler etter valgt strategi, i visningsrekkefølge,
-     * begrenset av hvor mye som er klart til å fordeles.
+     * begrenset av hvor mye som er klart til å fordeles. Et valgfritt
+     * $categoryIds-filter avgrenser til et utvalg kategorier.
      *
+     * @param  list<int>|null  $categoryIds
      * @return array<string, mixed>
      */
-    public function autoAssign(string $month, string $strategy): array
+    public function autoAssign(string $month, string $strategy, ?array $categoryIds = null): array
     {
         $view = $this->budget->monthlyView($month);
         $remaining = (float) $view['ready_to_assign'];
+        $only = $categoryIds !== null ? array_flip($categoryIds) : null;
 
         foreach ($view['groups'] as $group) {
             foreach ($group['categories'] as $category) {
                 if ($remaining <= 0) {
                     break 2;
+                }
+
+                if ($only !== null && ! isset($only[$category['id']])) {
+                    continue;
                 }
 
                 // Dekk overtrekk bruker projisert tilgjengelig, slik at også

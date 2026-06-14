@@ -57,11 +57,49 @@ class BudgetController extends Controller
                 'sometimes',
                 Rule::in([GoalService::STRATEGY_FUND_GOALS, GoalService::STRATEGY_COVER_OVERSPENDING]),
             ],
+            'category_ids' => ['sometimes', 'array'],
+            'category_ids.*' => ['integer', Rule::exists('categories', 'id')],
         ]);
 
         $strategy = $validated['strategy'] ?? GoalService::STRATEGY_FUND_GOALS;
 
-        return response()->json($this->goals->autoAssign($month, $strategy));
+        return response()->json(
+            $this->goals->autoAssign($month, $strategy, $validated['category_ids'] ?? null),
+        );
+    }
+
+    /**
+     * Tøm alt tilgjengelig fra et utvalg kategorier over i én målkategori.
+     */
+    public function sweep(Request $request, string $month): JsonResponse
+    {
+        $validated = $request->validate([
+            'to_category_id' => ['required', 'integer', Rule::exists('categories', 'id')],
+            'from_category_ids' => ['required', 'array', 'min:1'],
+            'from_category_ids.*' => ['integer', Rule::exists('categories', 'id')],
+        ]);
+
+        $target = Category::findOrFail($validated['to_category_id']);
+        $this->budget->sweepToCategory($validated['from_category_ids'], $target, $month);
+
+        return response()->json($this->budget->monthlyView($month));
+    }
+
+    /**
+     * Nullstill tildelingen (assigned = 0) for et utvalg kategorier i måneden.
+     */
+    public function resetAssignments(Request $request, string $month): JsonResponse
+    {
+        $validated = $request->validate([
+            'category_ids' => ['required', 'array', 'min:1'],
+            'category_ids.*' => ['integer', Rule::exists('categories', 'id')],
+        ]);
+
+        foreach ($validated['category_ids'] as $id) {
+            $this->budget->assign(Category::findOrFail($id), $month, 0);
+        }
+
+        return response()->json($this->budget->monthlyView($month));
     }
 
     /**

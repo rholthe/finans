@@ -132,6 +132,25 @@ class GoalTest extends TestCase
             ->assertJsonPath('ready_to_assign', 0);
     }
 
+    public function test_auto_assign_avgrenset_til_valgte_kategorier(): void
+    {
+        $this->income(2000);
+        $group = CategoryGroup::factory()->create();
+        $first = Category::factory()->for($group, 'group')->create(['sort_order' => 1]);
+        $second = Category::factory()->for($group, 'group')->create(['sort_order' => 2]);
+        Goal::factory()->monthly(500)->create(['category_id' => $first->id]);
+        Goal::factory()->monthly(300)->create(['category_id' => $second->id]);
+
+        // Kun den andre kategorien er valgt → kun den fylles.
+        $this->postJson('/api/budget/2026-01/auto-assign', [
+            'strategy' => 'fund-goals',
+            'category_ids' => [$second->id],
+        ])
+            ->assertOk()
+            ->assertJsonPath('groups.0.categories.0.assigned', 0)
+            ->assertJsonPath('groups.0.categories.1.assigned', 300);
+    }
+
     public function test_auto_assign_dekker_overtrekk(): void
     {
         $this->income(1000);
