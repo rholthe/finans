@@ -13,6 +13,7 @@ import {
     getTransactions,
     listAccounts,
     listCategoryGroups,
+    reconcileAccount,
     updateTransaction,
     type NewTransaction,
 } from '@/lib/data';
@@ -26,6 +27,11 @@ import {
 } from '@/types';
 
 const PER_PAGE_OPTIONS = [25, 50, 100, 200, 500];
+
+/** Bekreftelse før en tidligere avstemt transaksjon endres eller slettes. */
+function confirmReconciled(): boolean {
+    return confirm('Denne transaksjonen er tidligere avstemt. Er du helt sikker på at du vil endre den?');
+}
 
 export default function AccountDetail() {
     const { id } = useParams();
@@ -45,6 +51,7 @@ export default function AccountDetail() {
     const [ruleForTx, setRuleForTx] = useState<Transaction | null>(null);
     const [includeMatched, setIncludeMatched] = useState(false);
     const [notice, setNotice] = useState<string | null>(null);
+    const [showReconcile, setShowReconcile] = useState(false);
 
     const reload = useCallback(async () => {
         const [acc, paged] = await Promise.all([
@@ -71,12 +78,22 @@ export default function AccountDetail() {
     );
 
     async function toggleCleared(tx: Transaction) {
+        if (tx.reconciled_at && !confirmReconciled()) return;
         await updateTransaction(tx.id, { cleared: !tx.cleared });
         reload();
     }
 
+    function startEdit(tx: Transaction) {
+        if (tx.reconciled_at && !confirmReconciled()) return;
+        setEditingId(tx.id);
+    }
+
     async function remove(tx: Transaction) {
-        if (!confirm('Slette denne transaksjonen?')) return;
+        if (tx.reconciled_at) {
+            if (!confirmReconciled()) return;
+        } else if (!confirm('Slette denne transaksjonen?')) {
+            return;
+        }
         await deleteTransaction(tx.id);
         reload();
     }
@@ -123,14 +140,40 @@ export default function AccountDetail() {
                         {ACCOUNT_TYPE_LABELS[account.type]}
                     </span>
                 </h1>
-                <span
-                    className={`text-xl font-semibold tabular-nums ${
-                        account.balance < 0 ? 'text-red-600' : 'text-neutral-900'
-                    }`}
-                >
-                    {formatNok(account.balance)}
-                </span>
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={() => setShowReconcile(true)}
+                        className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
+                    >
+                        Avstem
+                    </button>
+                    <span
+                        className={`text-xl font-semibold tabular-nums ${
+                            account.balance < 0 ? 'text-red-600' : 'text-neutral-900'
+                        }`}
+                    >
+                        {formatNok(account.balance)}
+                    </span>
+                </div>
             </div>
+
+            <p className="mt-1 text-right text-xs text-neutral-400">
+                Klarert: {formatNok(account.cleared_balance)}
+                {account.last_reconciled_at &&
+                    ` · sist avstemt ${formatDate(account.last_reconciled_at)}`}
+            </p>
+
+            {showReconcile && (
+                <ReconcileModal
+                    account={account}
+                    onClose={() => setShowReconcile(false)}
+                    onReconciled={(message) => {
+                        setShowReconcile(false);
+                        setNotice(message);
+                        reload();
+                    }}
+                />
+            )}
 
             <EntryForms account={account} groups={groups} onCreated={reload} />
 
@@ -283,6 +326,14 @@ export default function AccountDetail() {
                                                 {tx.locked && (
                                                     <span title="Låst – beskyttet mot regler">🔒</span>
                                                 )}
+                                                {tx.reconciled_at && (
+                                                    <span
+                                                        title="Avstemt"
+                                                        className="rounded bg-green-50 px-1 py-0.5 text-[10px] font-medium uppercase text-green-600"
+                                                    >
+                                                        avstemt
+                                                    </span>
+                                                )}
                                             </span>
                                         </td>
                                         <td className="px-4 py-2 text-neutral-500">
@@ -327,7 +378,7 @@ export default function AccountDetail() {
                                             )}
                                             {!tx.transfer_id && (
                                                 <button
-                                                    onClick={() => setEditingId(tx.id)}
+                                                    onClick={() => startEdit(tx)}
                                                     className="ml-3 text-xs text-neutral-400 hover:text-neutral-900"
                                                 >
                                                     Rediger
@@ -372,6 +423,102 @@ export default function AccountDetail() {
                 </div>
             )}
         </Layout>
+    );
+}
+
+function ReconcileModal({
+    account,
+    onClose,
+    onReconciled,
+}: {
+    account: Account;
+    onClose: () => void;
+    onReconciled: (message: string) => void;
+}) {
+    const [balance, setBalance] = useState(String(account.cleared_balance));
+    const [date, setDate] = useState(todayIso());
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    async function submit(e: FormEvent) {
+        e.preventDefault();
+        const value = Number(balance);
+        if (Number.isNaN(value)) {
+            setError('Oppgi en gyldig saldo.');
+            return;
+        }
+        setBusy(true);
+        setError(null);
+        try {
+            const result = await reconcileAccount(account.id, value, date);
+            const message =
+                result.adjustment_amount === 0
+                    ? 'Avstemt – ingen justering nødvendig.'
+                    : `Avstemt – justering på ${formatNok(result.adjustment_amount)} opprettet.`;
+            onReconciled(message);
+        } catch (err) {
+            setError(apiErrorMessage(err, 'Kunne ikke avstemme kontoen.'));
+            setBusy(false);
+        }
+    }
+
+    const diff = Number(balance) - account.cleared_balance;
+
+    return (
+        <Modal title={`Avstem ${account.name}`} onClose={onClose}>
+            <form onSubmit={submit} className="space-y-3">
+                <p className="text-sm text-neutral-500">
+                    Klarert saldo:{' '}
+                    <span className="font-medium tabular-nums">{formatNok(account.cleared_balance)}</span>
+                </p>
+                <label className="block text-xs font-medium text-neutral-600">
+                    Faktisk saldo i banken
+                    <input
+                        type="number"
+                        step="0.01"
+                        value={balance}
+                        onChange={(e) => setBalance(e.target.value)}
+                        autoFocus
+                        className="mt-1 block w-44 rounded-lg border border-neutral-300 px-2 py-1.5 text-right text-sm focus:border-neutral-900 focus:outline-none"
+                    />
+                </label>
+                <label className="block text-xs font-medium text-neutral-600">
+                    Dato for justering
+                    <input
+                        type="date"
+                        value={date}
+                        onChange={(e) => setDate(e.target.value)}
+                        className="mt-1 block rounded-lg border border-neutral-300 px-2 py-1.5 text-sm focus:border-neutral-900 focus:outline-none"
+                    />
+                </label>
+
+                {!Number.isNaN(diff) && diff !== 0 && (
+                    <p className="text-sm text-neutral-600">
+                        Avvik på <span className="font-medium tabular-nums">{formatNok(diff)}</span> bokføres
+                        som en justering.
+                    </p>
+                )}
+
+                {error && <p className="text-sm text-red-600">{error}</p>}
+
+                <div className="flex gap-2 pt-1">
+                    <button
+                        type="submit"
+                        disabled={busy}
+                        className="rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+                    >
+                        {busy ? 'Avstemmer …' : 'Avstem'}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-500 hover:bg-neutral-100"
+                    >
+                        Avbryt
+                    </button>
+                </div>
+            </form>
+        </Modal>
     );
 }
 

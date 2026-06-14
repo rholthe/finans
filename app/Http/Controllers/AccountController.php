@@ -20,6 +20,10 @@ class AccountController extends Controller
     {
         $accounts = Account::query()
             ->withSum('transactions', 'amount')
+            ->withSum(
+                ['transactions as cleared_transactions_sum_amount' => fn ($q) => $q->where('cleared', true)],
+                'amount',
+            )
             ->orderBy('closed')
             ->orderBy('name')
             ->get();

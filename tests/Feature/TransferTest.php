@@ -89,6 +89,32 @@ class TransferTest extends TestCase
         $this->assertEquals(-250, $leg->fresh()->amount);
     }
 
+    public function test_overforingsben_kan_klareres_uavhengig(): void
+    {
+        $from = Account::factory()->create();
+        $to = Account::factory()->create();
+
+        $this->postJson('/api/transfers', [
+            'from_account_id' => $from->id,
+            'to_account_id' => $to->id,
+            'amount' => 250,
+            'date' => '2026-01-10',
+        ])->assertCreated();
+
+        $fromLeg = $from->transactions()->firstOrFail();
+        $toLeg = $to->transactions()->firstOrFail();
+
+        // Hvert ben klareres for seg – de posteres på hver sin konto til ulik tid.
+        $this->patchJson("/api/transactions/{$fromLeg->id}", ['cleared' => true])->assertOk();
+        $this->assertTrue($fromLeg->fresh()->cleared);
+        $this->assertFalse($toLeg->fresh()->cleared);
+
+        // Andre felter er fortsatt blokkert selv om cleared sendes med.
+        $this->patchJson("/api/transactions/{$toLeg->id}", ['cleared' => true, 'amount' => -1])
+            ->assertStatus(422);
+        $this->assertEquals(250, $toLeg->fresh()->amount);
+    }
+
     public function test_overforing_paavirker_ikke_ready_to_assign(): void
     {
         $checking = Account::factory()->create(['type' => 'bank', 'on_budget' => true]);

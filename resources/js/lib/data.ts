@@ -6,12 +6,14 @@ import type {
     BankConnection,
     BudgetMonth,
     Category,
+    CategoryActivity,
     CategoryGroup,
     AppSettings,
     Goal,
     GoalType,
     Institution,
     Paginated,
+    ReconcileResult,
     Rule,
     RuleApplies,
     ScheduledTransaction,
@@ -82,6 +84,19 @@ export async function createAccount(payload: NewAccount): Promise<Account> {
 
 export async function deleteAccount(id: number): Promise<void> {
     await api.delete(`/accounts/${id}`);
+}
+
+/** Avstem en konto mot oppgitt faktisk banksaldo. Lager justering ved avvik. */
+export async function reconcileAccount(
+    accountId: number,
+    statementBalance: number,
+    date: string,
+): Promise<ReconcileResult> {
+    const res = await api.post<ReconcileResult>(`/accounts/${accountId}/reconcile`, {
+        statement_balance: statementBalance,
+        date,
+    });
+    return res.data;
 }
 
 export interface TransactionQuery {
@@ -223,6 +238,31 @@ export async function autoAssign(
 
 export async function fundCategory(month: string, categoryId: number): Promise<BudgetMonth> {
     const res = await api.post<BudgetMonth>(`/budget/${month}/categories/${categoryId}/fund`);
+    return res.data;
+}
+
+/** Transaksjoner + planlagte poster bak «aktivitet» for en kategori i måneden. */
+export async function getCategoryActivity(
+    month: string,
+    categoryId: number,
+): Promise<CategoryActivity> {
+    const res = await api.get<CategoryActivity>(
+        `/budget/${month}/categories/${categoryId}/transactions`,
+    );
+    return res.data;
+}
+
+/** Flytt tilgjengelige penger fra én kategori til en annen (netto tildeling = 0). */
+export async function moveBudget(
+    month: string,
+    fromCategoryId: number,
+    toCategoryId: number,
+    amount: number,
+): Promise<BudgetMonth> {
+    const res = await api.post<BudgetMonth>(`/budget/${month}/categories/${fromCategoryId}/move`, {
+        to_category_id: toCategoryId,
+        amount,
+    });
     return res.data;
 }
 

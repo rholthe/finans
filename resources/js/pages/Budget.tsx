@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '@/components/Layout';
+import Modal from '@/components/Modal';
 import {
     apiErrorMessage,
     assignBudget,
@@ -10,16 +11,20 @@ import {
     deleteGoal,
     fundCategory,
     getBudget,
+    getCategoryActivity,
+    moveBudget,
     setGoal,
     type AutoAssignStrategy,
     type GoalInput,
 } from '@/lib/data';
-import { currentMonth, formatNok, monthLabel, shiftMonth } from '@/lib/format';
+import { currentMonth, formatDate, formatNok, monthLabel, shiftMonth } from '@/lib/format';
 import {
+    FREQUENCY_LABELS,
     GOAL_TYPE_LABELS,
     type BudgetCategory,
     type BudgetGroup,
     type BudgetMonth,
+    type CategoryActivity,
     type Goal,
     type GoalType,
 } from '@/types';
@@ -136,6 +141,7 @@ export default function Budget() {
                             <Group
                                 key={group.id}
                                 group={group}
+                                allGroups={budget.groups}
                                 month={month}
                                 onChange={setBudget}
                                 reload={reload}
@@ -186,11 +192,13 @@ function ReadyToAssign({
 
 function Group({
     group,
+    allGroups,
     month,
     onChange,
     reload,
 }: {
     group: BudgetGroup;
+    allGroups: BudgetGroup[];
     month: string;
     onChange: (budget: BudgetMonth) => void;
     reload: () => void;
@@ -221,6 +229,7 @@ function Group({
                 <CategoryRow
                     key={category.id}
                     category={category}
+                    allGroups={allGroups}
                     month={month}
                     onChange={onChange}
                     reload={reload}
@@ -273,16 +282,20 @@ function availableClass(category: BudgetCategory): string {
 
 function CategoryRow({
     category,
+    allGroups,
     month,
     onChange,
     reload,
 }: {
     category: BudgetCategory;
+    allGroups: BudgetGroup[];
     month: string;
     onChange: (budget: BudgetMonth) => void;
     reload: () => void;
 }) {
     const [editingGoal, setEditingGoal] = useState(false);
+    const [showActivity, setShowActivity] = useState(false);
+    const [showMove, setShowMove] = useState(false);
 
     async function fund() {
         onChange(await fundCategory(month, category.id));
@@ -348,12 +361,22 @@ function CategoryRow({
                     )}
                 </div>
                 <AssignedInput category={category} month={month} onChange={onChange} />
-                <span className="text-right text-sm tabular-nums text-neutral-500">
+                <button
+                    type="button"
+                    onClick={() => setShowActivity(true)}
+                    title="Vis transaksjoner og planlagte"
+                    className="w-full rounded px-1 text-right text-sm tabular-nums text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+                >
                     {formatNok(category.activity)}
-                </span>
-                <span className={`text-right text-sm font-medium tabular-nums ${availableClass(category)}`}>
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setShowMove(true)}
+                    title="Flytt penger til en annen kategori"
+                    className={`w-full rounded px-1 text-right text-sm font-medium tabular-nums hover:bg-neutral-100 ${availableClass(category)}`}
+                >
                     {formatNok(category.available)}
-                </span>
+                </button>
             </div>
 
             {editingGoal && (
@@ -366,7 +389,229 @@ function CategoryRow({
                     onCancel={() => setEditingGoal(false)}
                 />
             )}
+
+            {showActivity && (
+                <ActivityModal
+                    category={category}
+                    month={month}
+                    onClose={() => setShowActivity(false)}
+                />
+            )}
+
+            {showMove && (
+                <MoveModal
+                    category={category}
+                    allGroups={allGroups}
+                    month={month}
+                    onMoved={(updated) => {
+                        onChange(updated);
+                        setShowMove(false);
+                    }}
+                    onClose={() => setShowMove(false)}
+                />
+            )}
         </div>
+    );
+}
+
+function ActivityModal({
+    category,
+    month,
+    onClose,
+}: {
+    category: BudgetCategory;
+    month: string;
+    onClose: () => void;
+}) {
+    const [data, setData] = useState<CategoryActivity | null>(null);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        getCategoryActivity(month, category.id)
+            .then(setData)
+            .catch((e) => setError(apiErrorMessage(e, 'Kunne ikke hente transaksjoner.')));
+    }, [month, category.id]);
+
+    return (
+        <Modal title={`${category.name} – ${monthLabel(month)}`} onClose={onClose}>
+            {error && <p className="text-sm text-red-600">{error}</p>}
+            {!error && !data && <p className="text-sm text-neutral-400">Laster …</p>}
+            {data && (
+                <div className="space-y-5">
+                    <div>
+                        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                            Transaksjoner
+                        </h3>
+                        {data.transactions.length === 0 ? (
+                            <p className="text-sm text-neutral-400">Ingen transaksjoner denne måneden.</p>
+                        ) : (
+                            <ul className="divide-y divide-neutral-100">
+                                {data.transactions.map((t) => (
+                                    <li key={t.id} className="flex items-center justify-between gap-3 py-1.5">
+                                        <div className="min-w-0">
+                                            <div className="truncate text-sm">{t.payee || '—'}</div>
+                                            <div className="text-xs text-neutral-400">
+                                                {formatDate(t.date)} · {t.account ?? '—'}
+                                                {t.memo ? ` · ${t.memo}` : ''}
+                                            </div>
+                                        </div>
+                                        <span
+                                            className={`shrink-0 text-sm tabular-nums ${
+                                                t.amount < 0 ? 'text-neutral-700' : 'text-green-700'
+                                            }`}
+                                        >
+                                            {formatNok(t.amount)}
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
+
+                    {data.scheduled.length > 0 && (
+                        <div>
+                            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                                Planlagte
+                            </h3>
+                            <ul className="divide-y divide-neutral-100">
+                                {data.scheduled.map((s) => (
+                                    <li key={s.id} className="flex items-center justify-between gap-3 py-1.5">
+                                        <div className="min-w-0">
+                                            <div className="truncate text-sm">{s.payee || '—'}</div>
+                                            <div className="text-xs text-neutral-400">
+                                                {FREQUENCY_LABELS[s.frequency]} · {s.account ?? '—'} ·{' '}
+                                                {s.dates.map((d) => formatDate(d)).join(', ')}
+                                            </div>
+                                        </div>
+                                        <span
+                                            className={`shrink-0 text-sm tabular-nums ${
+                                                s.total < 0 ? 'text-neutral-700' : 'text-green-700'
+                                            }`}
+                                        >
+                                            {formatNok(s.total)}
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                </div>
+            )}
+        </Modal>
+    );
+}
+
+function MoveModal({
+    category,
+    allGroups,
+    month,
+    onMoved,
+    onClose,
+}: {
+    category: BudgetCategory;
+    allGroups: BudgetGroup[];
+    month: string;
+    onMoved: (budget: BudgetMonth) => void;
+    onClose: () => void;
+}) {
+    const max = Math.max(0, category.available);
+    const [amount, setAmount] = useState(String(max));
+    const [target, setTarget] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    async function submit(e: FormEvent) {
+        e.preventDefault();
+        const value = Number(amount);
+        if (!value || value <= 0) {
+            setError('Oppgi et beløp større enn 0.');
+            return;
+        }
+        if (value > max + 0.001) {
+            setError(`Du kan flytte maks ${formatNok(max)}.`);
+            return;
+        }
+        if (!target) {
+            setError('Velg en kategori å flytte til.');
+            return;
+        }
+        setBusy(true);
+        setError(null);
+        try {
+            onMoved(await moveBudget(month, category.id, Number(target), value));
+        } catch (err) {
+            setError(apiErrorMessage(err, 'Kunne ikke flytte penger.'));
+            setBusy(false);
+        }
+    }
+
+    return (
+        <Modal title={`Flytt fra ${category.name}`} onClose={onClose}>
+            {max <= 0 ? (
+                <p className="text-sm text-neutral-500">
+                    Det er ingen tilgjengelige penger å flytte fra denne kategorien.
+                </p>
+            ) : (
+                <form onSubmit={submit} className="space-y-3">
+                    <p className="text-sm text-neutral-500">
+                        Tilgjengelig: <span className="font-medium tabular-nums">{formatNok(max)}</span>
+                    </p>
+                    <label className="block text-xs font-medium text-neutral-600">
+                        Beløp
+                        <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            max={max}
+                            value={amount}
+                            onChange={(e) => setAmount(e.target.value)}
+                            autoFocus
+                            className="mt-1 block w-40 rounded-lg border border-neutral-300 px-2 py-1.5 text-right text-sm focus:border-neutral-900 focus:outline-none"
+                        />
+                    </label>
+                    <label className="block text-xs font-medium text-neutral-600">
+                        Til kategori
+                        <select
+                            value={target}
+                            onChange={(e) => setTarget(e.target.value)}
+                            className="mt-1 block w-full rounded-lg border border-neutral-300 px-2 py-1.5 text-sm focus:border-neutral-900 focus:outline-none"
+                        >
+                            <option value="">Velg …</option>
+                            {allGroups.map((group) => (
+                                <optgroup key={group.id} label={group.name}>
+                                    {group.categories
+                                        .filter((c) => c.id !== category.id)
+                                        .map((c) => (
+                                            <option key={c.id} value={c.id}>
+                                                {c.name}
+                                            </option>
+                                        ))}
+                                </optgroup>
+                            ))}
+                        </select>
+                    </label>
+
+                    {error && <p className="text-sm text-red-600">{error}</p>}
+
+                    <div className="flex gap-2 pt-1">
+                        <button
+                            type="submit"
+                            disabled={busy}
+                            className="rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+                        >
+                            Flytt
+                        </button>
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-500 hover:bg-neutral-100"
+                        >
+                            Avbryt
+                        </button>
+                    </div>
+                </form>
+            )}
+        </Modal>
     );
 }
 

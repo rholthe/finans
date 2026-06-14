@@ -20,6 +20,10 @@ class AccountResource extends JsonResource
         // (withSum/loadSum) når den finnes, ellers beregn direkte.
         $balance = $this->transactions_sum_amount ?? $this->transactions()->sum('amount');
 
+        // Klarert saldo = sum av klarerte transaksjoner (grunnlaget for avstemming).
+        $clearedBalance = $this->cleared_transactions_sum_amount
+            ?? $this->transactions()->where('cleared', true)->sum('amount');
+
         return [
             'id' => $this->id,
             'name' => $this->name,
@@ -29,6 +33,8 @@ class AccountResource extends JsonResource
             'closed' => $this->closed,
             'note' => $this->note,
             'balance' => round((float) $balance, 2),
+            'cleared_balance' => round((float) $clearedBalance, 2),
+            'last_reconciled_at' => $this->reconciliations()->max('reconciled_at'),
         ];
     }
 }

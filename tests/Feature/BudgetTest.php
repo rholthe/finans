@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Account;
 use App\Models\Category;
+use App\Models\ScheduledTransaction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
@@ -185,5 +186,97 @@ class BudgetTest extends TestCase
 
         $this->getJson('/api/budget?month=2026-02')
             ->assertJsonPath('groups.0.categories.0.available', 500);
+    }
+
+    public function test_kategoriaktivitet_viser_transaksjoner_med_konto_og_planlagte(): void
+    {
+        $category = $this->category();
+        $account = Account::factory()->create(['on_budget' => true, 'name' => 'Brukskonto']);
+
+        // Fremtidige datoer slik at planlagt-posten ikke auto-posteres av
+        // EnsureScheduledTransactionsPosted-middleware før vi henter visningen.
+        $account->transactions()->create([
+            'category_id' => $category->id,
+            'date' => '2027-01-15',
+            'amount' => -300,
+            'payee' => 'Rema 1000',
+        ]);
+
+        // Transaksjon i en annen måned skal ikke tas med.
+        $account->transactions()->create([
+            'category_id' => $category->id,
+            'date' => '2027-02-01',
+            'amount' => -50,
+        ]);
+
+        ScheduledTransaction::factory()->startingOn('2027-01-20')->create([
+            'account_id' => $account->id,
+            'category_id' => $category->id,
+            'amount' => -200,
+            'payee' => 'Strøm',
+        ]);
+
+        $this->getJson("/api/budget/2027-01/categories/{$category->id}/transactions")
+            ->assertOk()
+            ->assertJsonCount(1, 'transactions')
+            ->assertJsonPath('transactions.0.amount', -300)
+            ->assertJsonPath('transactions.0.account', 'Brukskonto')
+            ->assertJsonPath('transactions.0.payee', 'Rema 1000')
+            ->assertJsonCount(1, 'scheduled')
+            ->assertJsonPath('scheduled.0.total', -200);
+    }
+
+    public function test_flytt_penger_mellom_kategorier_endrer_tildeling_men_ikke_rta(): void
+    {
+        $from = $this->category();
+        $to = $this->category();
+
+        $this->putJson("/api/budget/2026-01/categories/{$from->id}", ['assigned' => 1000]);
+
+        $this->postJson("/api/budget/2026-01/categories/{$from->id}/move", [
+            'to_category_id' => $to->id,
+            'amount' => 400,
+        ])->assertOk();
+
+        $response = $this->getJson('/api/budget?month=2026-01')->assertOk();
+
+        $categories = collect($response->json('groups'))
+            ->flatMap(fn (array $group): array => $group['categories'])
+            ->keyBy('id');
+        $this->assertEquals(600, $categories[$from->id]['assigned']);
+        $this->assertEquals(600, $categories[$from->id]['available']);
+        $this->assertEquals(400, $categories[$to->id]['assigned']);
+        $this->assertEquals(400, $categories[$to->id]['available']);
+
+        // Netto tildeling er uendret (1000), så Ready to Assign påvirkes ikke.
+        $response->assertJsonPath('ready_to_assign', -1000);
+    }
+
+    public function test_kan_ikke_flytte_mer_enn_tilgjengelig(): void
+    {
+        $from = $this->category();
+        $to = $this->category();
+
+        $this->putJson("/api/budget/2026-01/categories/{$from->id}", ['assigned' => 100]);
+
+        $this->postJson("/api/budget/2026-01/categories/{$from->id}/move", [
+            'to_category_id' => $to->id,
+            'amount' => 200,
+        ])->assertStatus(422);
+
+        $this->assertDatabaseMissing('budget_allocations', [
+            'category_id' => $to->id,
+        ]);
+    }
+
+    public function test_kan_ikke_flytte_til_samme_kategori(): void
+    {
+        $category = $this->category();
+        $this->putJson("/api/budget/2026-01/categories/{$category->id}", ['assigned' => 100]);
+
+        $this->postJson("/api/budget/2026-01/categories/{$category->id}/move", [
+            'to_category_id' => $category->id,
+            'amount' => 50,
+        ])->assertStatus(422);
     }
 }

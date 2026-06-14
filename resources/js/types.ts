@@ -9,6 +9,14 @@ export interface Account {
     closed: boolean;
     note: string | null;
     balance: number;
+    cleared_balance: number;
+    last_reconciled_at: string | null;
+}
+
+export interface ReconcileResult {
+    account: Account;
+    cleared_balance: number; // klarert saldo før justering
+    adjustment_amount: number; // justeringens beløp (0 = ingen justering)
 }
 
 export interface Transaction {
@@ -23,6 +31,7 @@ export interface Transaction {
     payee: string | null;
     memo: string | null;
     cleared: boolean;
+    reconciled_at: string | null; // satt når raden er avstemt (null = ikke avstemt)
     is_starting_balance: boolean;
     transfer_id: number | null; // det andre benet i en overføring (null = vanlig transaksjon)
     transfer_account?: string | null; // navnet på motkontoen i overføringen
@@ -120,6 +129,33 @@ export interface BudgetMonth {
     upcoming_income: number; // netto kommende ukategoriserte poster på budsjettkontoer
     projected_ready_to_assign: number;
     groups: BudgetGroup[];
+}
+
+export interface CategoryActivityTransaction {
+    id: number;
+    date: string; // YYYY-MM-DD
+    amount: number; // signert
+    payee: string | null;
+    memo: string | null;
+    account: string | null;
+}
+
+export interface CategoryActivityScheduled {
+    id: number;
+    amount: number; // signert
+    payee: string | null;
+    memo: string | null;
+    account: string | null;
+    frequency: ScheduleFrequency;
+    dates: string[]; // forfall i måneden (YYYY-MM-DD)
+    total: number; // amount * antall forfall
+}
+
+export interface CategoryActivity {
+    category: { id: number; name: string };
+    month: string; // YYYY-MM
+    transactions: CategoryActivityTransaction[];
+    scheduled: CategoryActivityScheduled[];
 }
 
 export type ScheduleFrequency =

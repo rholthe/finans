@@ -7,6 +7,7 @@ use App\Http\Controllers\BudgetController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CategoryGroupController;
 use App\Http\Controllers\GoalController;
+use App\Http\Controllers\ReconciliationController;
 use App\Http\Controllers\RuleController;
 use App\Http\Controllers\ScheduledTransactionController;
 use App\Http\Controllers\SettingsController;
@@ -31,6 +32,7 @@ Route::prefix('api')->group(function () {
         Route::get('/ping', fn () => response()->json(['pong' => true]));
 
         Route::apiResource('accounts', AccountController::class);
+        Route::post('accounts/{account}/reconcile', [ReconciliationController::class, 'store']);
 
         Route::apiResource('scheduled-transactions', ScheduledTransactionController::class)
             ->only(['index', 'store', 'update', 'destroy']);
@@ -51,7 +53,11 @@ Route::prefix('api')->group(function () {
         Route::get('budget', [BudgetController::class, 'show']);
         Route::put('budget/{month}/categories/{category}', [BudgetController::class, 'assign'])
             ->where('month', '\d{4}-\d{2}');
+        Route::get('budget/{month}/categories/{category}/transactions', [BudgetController::class, 'categoryTransactions'])
+            ->where('month', '\d{4}-\d{2}');
         Route::post('budget/{month}/categories/{category}/fund', [BudgetController::class, 'fundCategory'])
+            ->where('month', '\d{4}-\d{2}');
+        Route::post('budget/{month}/categories/{category}/move', [BudgetController::class, 'move'])
             ->where('month', '\d{4}-\d{2}');
         Route::post('budget/{month}/auto-assign', [BudgetController::class, 'autoAssign'])
             ->where('month', '\d{4}-\d{2}');

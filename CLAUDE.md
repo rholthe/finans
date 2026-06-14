@@ -41,14 +41,15 @@ Scheduleren kjører nattlig banksynk og postering av planlagte transaksjoner (se
 
 - `routes/web.php` — `/api/*`-ruter + SPA catch-all
 - `routes/console.php` — scheduler (nattlig banksynk-jobb + `transactions:post-due`)
-- `app/Http/Controllers/` — Auth, Account, Transaction, Transfer, Budget, Category, CategoryGroup,
-  Goal, ScheduledTransaction, Bank, Rule, Settings
+- `app/Http/Controllers/` — Auth, Account, Transaction, Transfer, Reconciliation, Budget, Category,
+  CategoryGroup, Goal, ScheduledTransaction, Bank, Rule, Settings
 - `app/Http/Middleware/Authenticated.php` — alias `auth.session`, beskytter API-ruter
 - `app/Http/Middleware/EnsureScheduledTransactionsPosted.php` — posterer forfalte planlagte ved hvert API-kall
 - `app/Services/Bank/` — `BankDataProvider`-grensesnitt, `GoCardlessProvider`,
   `NormalizedTransaction`-DTO, `BankSyncService`, `Mapping/` (per-bank feltmapping)
 - `app/Services/Rules/` — `RuleEngine`, `RuleResult`, `ReapplyRules` (leverandøruavhengig)
-- `app/Services/` — `BudgetService` (beregner available/RTA), `GoalService`, `ScheduledTransactionService`
+- `app/Services/` — `BudgetService` (beregner available/RTA), `GoalService`, `ScheduledTransactionService`,
+  `ReconciliationService` (avstemming: klarert saldo → justering)
 - `app/Jobs/SyncBankTransactionsJob.php` — køet banksynk (WithoutOverlapping)
 - `app/Support/AppSettings.php` — brukerstyrte innstillinger (nøkkel/verdi)
 - `app/Enums/` — `AccountType`, `GoalType`, `ScheduleFrequency`, `RuleApplies`
@@ -78,6 +79,12 @@ Scheduleren kjører nattlig banksynk og postering av planlagte transaksjoner (se
   kategoriens `available`, ikke RTA), og gjelda reduserer «penger på konto». Kortet betales
   ned med en overføring fra en annen konto. (En YNAB-stil betalingskategori ble vurdert og
   forkastet til fordel for denne enkelheten.)
+- **Avstemming** gjør klarert saldo (sum av `cleared`-transaksjoner) lik oppgitt faktisk
+  banksaldo ved å bokføre en **ukategorisert** «Avstemmingsjustering» for avviket. Justeringen
+  påvirker dermed RTA på budsjettkontoer (positivt avvik øker, negativt reduserer), mens
+  identiteten RTA + Σtilgjengelig = penger på konto holder. Alle klarerte rader stemples
+  `reconciled_at`; avstemte rader kan fortsatt redigeres, men frontend varsler først. Historikk
+  lagres i `reconciliations` (`ReconciliationService`).
 - **Overføringer** er to sammenkoblede, ukategoriserte transaksjoner (`transactions.transfer_id`).
   De nuller hverandre ut i RTA og brukes bl.a. til å betale ned kredittkort. Begge ben slettes
   samlet; overføringer kan ikke redigeres (slett + opprett).
@@ -97,7 +104,7 @@ Scheduleren kjører nattlig banksynk og postering av planlagte transaksjoner (se
 7. ✅ Planlagte/repeterende transaksjoner (regningsmodul: frekvens, auto-postering, projeksjon)
 8. 🟡 Avansert:
    - ✅ Kredittkort som vanlig konto (kan ha negativ saldo) + overføringer for nedbetaling
-   - ⬜ Avstemming (reconciliation)
+   - ✅ Avstemming (reconciliation)
    - ⬜ Rapporter
    - ⬜ 2. bankleverandør
 9. ⬜ Tverrgående: design/UX-polish + brukertilbakemeldinger (tas til slutt)

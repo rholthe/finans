@@ -10,6 +10,7 @@ use App\Models\ScheduledTransaction;
 use App\Models\Transaction;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Budsjettmotoren. «available» lagres aldri – den beregnes kumulativt fra
@@ -157,6 +158,70 @@ class BudgetService
             ['category_id' => $category->id, 'month' => $start->toDateString()],
             ['assigned' => $amount],
         );
+    }
+
+    /**
+     * Tilgjengelig beløp for én kategori t.o.m. en gitt måned – samme beregning
+     * som i månedsvisningen (kumulativ tildeling + kumulativ aktivitet).
+     */
+    public function availableForCategory(Category $category, string $month): float
+    {
+        $start = $this->normalizeMonth($month);
+        $end = $start->endOfMonth();
+
+        $assigned = (float) BudgetAllocation::query()
+            ->where('category_id', $category->id)
+            ->where('month', '<=', $start->toDateString())
+            ->sum('assigned');
+
+        $activity = (float) Transaction::query()
+            ->where('category_id', $category->id)
+            ->whereHas('account', fn ($q) => $q->where('on_budget', true))
+            ->where('date', '<=', $end->toDateString())
+            ->sum('amount');
+
+        return round($assigned + $activity, 2);
+    }
+
+    /**
+     * Flytt tilgjengelige penger fra én kategori til en annen i en gitt måned ved
+     * å justere tildelingene: kilden reduseres og mottakeren økes med samme beløp.
+     * Netto tildeling er 0, så Ready to Assign er uberørt. Beløpet kan ikke
+     * overstige kildens tilgjengelige (den skal ikke kunne havne i minus).
+     *
+     * @throws \InvalidArgumentException ved ugyldig beløp
+     */
+    public function move(Category $from, Category $to, string $month, float $amount): void
+    {
+        if ($amount <= 0) {
+            throw new \InvalidArgumentException('Beløpet må være større enn 0.');
+        }
+
+        if ($from->id === $to->id) {
+            throw new \InvalidArgumentException('Kan ikke flytte til samme kategori.');
+        }
+
+        $available = $this->availableForCategory($from, $month);
+        if ($amount > $available + 0.001) {
+            throw new \InvalidArgumentException('Beløpet kan ikke overstige tilgjengelig i kildekategorien.');
+        }
+
+        $start = $this->normalizeMonth($month);
+
+        DB::transaction(function () use ($from, $to, $start, $month, $amount): void {
+            $fromAssigned = (float) (BudgetAllocation::query()
+                ->where('category_id', $from->id)
+                ->where('month', $start->toDateString())
+                ->value('assigned') ?? 0.0);
+
+            $toAssigned = (float) (BudgetAllocation::query()
+                ->where('category_id', $to->id)
+                ->where('month', $start->toDateString())
+                ->value('assigned') ?? 0.0);
+
+            $this->assign($from, $month, round($fromAssigned - $amount, 2));
+            $this->assign($to, $month, round($toAssigned + $amount, 2));
+        });
     }
 
     /**

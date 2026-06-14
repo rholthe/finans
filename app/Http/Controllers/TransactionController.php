@@ -51,12 +51,21 @@ class TransactionController extends Controller
 
     public function update(Request $request, Transaction $transaction): TransactionResource|JsonResponse
     {
-        // Overføringer er to sammenkoblede ben; redigering ville desynke paret.
+        // Overføringer er to sammenkoblede ben; beløp/dato/kategori kan ikke endres
+        // (det ville desynke paret). Men hvert ben må kunne klareres uavhengig –
+        // de posteres på hver sin konto til ulik tid – så `cleared` tillates.
         if ($transaction->transfer_id !== null) {
-            return response()->json(
-                ['message' => 'Overføringer kan ikke redigeres – slett og opprett på nytt.'],
-                422,
-            );
+            if (collect($request->keys())->diff(['cleared'])->isNotEmpty()) {
+                return response()->json(
+                    ['message' => 'Overføringer kan ikke redigeres – slett og opprett på nytt.'],
+                    422,
+                );
+            }
+
+            $validated = $request->validate(['cleared' => ['required', 'boolean']]);
+            $transaction->update($validated);
+
+            return TransactionResource::make($transaction);
         }
 
         $validated = $this->validatePayload($request, partial: true);
