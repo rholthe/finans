@@ -4,11 +4,14 @@ import Layout from '@/components/Layout';
 import Modal from '@/components/Modal';
 import RuleForm from '@/components/RuleForm';
 import {
+    apiErrorMessage,
     applyRulesToTransactions,
     createTransaction,
+    createTransfer,
     deleteTransaction,
     getAccount,
     getTransactions,
+    listAccounts,
     listCategoryGroups,
     updateTransaction,
     type NewTransaction,
@@ -129,7 +132,7 @@ export default function AccountDetail() {
                 </span>
             </div>
 
-            <NewTransactionForm accountId={accountId} groups={groups} onCreated={reload} />
+            <EntryForms account={account} groups={groups} onCreated={reload} />
 
             {ruleForTx && (
                 <Modal title="Ny regel fra transaksjon" onClose={() => setRuleForTx(null)}>
@@ -283,7 +286,13 @@ export default function AccountDetail() {
                                             </span>
                                         </td>
                                         <td className="px-4 py-2 text-neutral-500">
-                                            {tx.category_id ? categoryName.get(tx.category_id) ?? '—' : '—'}
+                                            {tx.transfer_id ? (
+                                                <span className="italic text-neutral-400">⇄ Overføring</span>
+                                            ) : tx.category_id ? (
+                                                categoryName.get(tx.category_id) ?? '—'
+                                            ) : (
+                                                '—'
+                                            )}
                                         </td>
                                         <td className="px-4 py-2 text-center">
                                             <button
@@ -306,7 +315,8 @@ export default function AccountDetail() {
                                             {formatNok(tx.amount)}
                                         </td>
                                         <td className="whitespace-nowrap px-4 py-2 text-right">
-                                            {!tx.rule_id && tx.bank_description && (
+                                            {/* Overføringer kan ikke redigeres eller regelstyres – kun slettes. */}
+                                            {!tx.transfer_id && !tx.rule_id && tx.bank_description && (
                                                 <button
                                                     onClick={() => setRuleForTx(tx)}
                                                     title="Lag regel fra denne"
@@ -315,12 +325,14 @@ export default function AccountDetail() {
                                                     + regel
                                                 </button>
                                             )}
-                                            <button
-                                                onClick={() => setEditingId(tx.id)}
-                                                className="ml-3 text-xs text-neutral-400 hover:text-neutral-900"
-                                            >
-                                                Rediger
-                                            </button>
+                                            {!tx.transfer_id && (
+                                                <button
+                                                    onClick={() => setEditingId(tx.id)}
+                                                    className="ml-3 text-xs text-neutral-400 hover:text-neutral-900"
+                                                >
+                                                    Rediger
+                                                </button>
+                                            )}
                                             <button
                                                 onClick={() => remove(tx)}
                                                 className="ml-3 text-xs text-neutral-400 hover:text-red-600"
@@ -360,6 +372,174 @@ export default function AccountDetail() {
                 </div>
             )}
         </Layout>
+    );
+}
+
+function EntryForms({
+    account,
+    groups,
+    onCreated,
+}: {
+    account: Account;
+    groups: CategoryGroup[];
+    onCreated: () => void;
+}) {
+    const [mode, setMode] = useState<'transaction' | 'transfer'>('transaction');
+
+    return (
+        <div className="mt-6">
+            <div className="mb-3 flex gap-2">
+                {(['transaction', 'transfer'] as const).map((m) => (
+                    <button
+                        key={m}
+                        type="button"
+                        onClick={() => setMode(m)}
+                        className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+                            mode === m ? 'bg-neutral-900 text-white' : 'text-neutral-600 hover:bg-neutral-100'
+                        }`}
+                    >
+                        {m === 'transaction' ? 'Transaksjon' : 'Overføring'}
+                    </button>
+                ))}
+            </div>
+            {mode === 'transaction' ? (
+                <NewTransactionForm accountId={account.id} groups={groups} onCreated={onCreated} />
+            ) : (
+                <NewTransferForm account={account} onCreated={onCreated} />
+            )}
+        </div>
+    );
+}
+
+function NewTransferForm({ account, onCreated }: { account: Account; onCreated: () => void }) {
+    const [accounts, setAccounts] = useState<Account[]>([]);
+    const [otherId, setOtherId] = useState('');
+    const [direction, setDirection] = useState<'out' | 'in'>('out');
+    const [amount, setAmount] = useState('');
+    const [date, setDate] = useState(todayIso());
+    const [memo, setMemo] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        listAccounts()
+            .then((all) => setAccounts(all.filter((a) => a.id !== account.id && !a.closed)))
+            .catch(() => setAccounts([]));
+    }, [account.id]);
+
+    async function onSubmit(e: FormEvent) {
+        e.preventDefault();
+        const magnitude = Math.abs(Number(amount));
+        const other = Number(otherId);
+        if (!other) {
+            setError('Velg en konto.');
+            return;
+        }
+        if (!magnitude) {
+            setError('Oppgi et beløp.');
+            return;
+        }
+        setBusy(true);
+        setError(null);
+        try {
+            await createTransfer({
+                from_account_id: direction === 'out' ? account.id : other,
+                to_account_id: direction === 'out' ? other : account.id,
+                amount: magnitude,
+                date,
+                memo: memo || undefined,
+            });
+            setAmount('');
+            setMemo('');
+            onCreated();
+        } catch (err) {
+            setError(apiErrorMessage(err, 'Kunne ikke opprette overføringen.'));
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    if (accounts.length === 0) {
+        return (
+            <p className="rounded-xl border border-dashed border-neutral-300 p-4 text-sm text-neutral-500">
+                Du trenger minst én konto til for å overføre.
+            </p>
+        );
+    }
+
+    return (
+        <form
+            onSubmit={onSubmit}
+            className="flex flex-wrap items-end gap-3 rounded-xl border border-neutral-200 bg-white p-4"
+        >
+            <label className="text-sm font-medium text-neutral-700">
+                Dato
+                <input
+                    type="date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                    className="mt-1 block rounded-lg border border-neutral-300 px-3 py-2 focus:border-neutral-900 focus:outline-none"
+                />
+            </label>
+
+            <div className="text-sm font-medium text-neutral-700">
+                Retning
+                <div className="mt-1 flex overflow-hidden rounded-lg border border-neutral-300">
+                    <button
+                        type="button"
+                        onClick={() => setDirection('out')}
+                        className={`px-3 py-2 ${direction === 'out' ? 'bg-red-600 text-white' : 'bg-white'}`}
+                    >
+                        Til
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setDirection('in')}
+                        className={`px-3 py-2 ${direction === 'in' ? 'bg-green-600 text-white' : 'bg-white'}`}
+                    >
+                        Fra
+                    </button>
+                </div>
+            </div>
+
+            <label className="flex-1 text-sm font-medium text-neutral-700">
+                {direction === 'out' ? 'Til konto' : 'Fra konto'}
+                <select
+                    value={otherId}
+                    onChange={(e) => setOtherId(e.target.value)}
+                    className="mt-1 block w-full rounded-lg border border-neutral-300 px-3 py-2 focus:border-neutral-900 focus:outline-none"
+                >
+                    <option value="">Velg konto …</option>
+                    {accounts.map((a) => (
+                        <option key={a.id} value={a.id}>
+                            {a.name}
+                        </option>
+                    ))}
+                </select>
+            </label>
+
+            <label className="text-sm font-medium text-neutral-700">
+                Beløp
+                <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    className="mt-1 block w-32 rounded-lg border border-neutral-300 px-3 py-2 text-right focus:border-neutral-900 focus:outline-none"
+                />
+            </label>
+
+            <button
+                type="submit"
+                disabled={busy}
+                className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+            >
+                {busy ? 'Lagrer …' : 'Overfør'}
+            </button>
+
+            {error && <p className="w-full text-sm text-red-600">{error}</p>}
+        </form>
     );
 }
 
@@ -408,7 +588,7 @@ function NewTransactionForm({
     return (
         <form
             onSubmit={onSubmit}
-            className="mt-6 flex flex-wrap items-end gap-3 rounded-xl border border-neutral-200 bg-white p-4"
+            className="flex flex-wrap items-end gap-3 rounded-xl border border-neutral-200 bg-white p-4"
         >
             <label className="text-sm font-medium text-neutral-700">
                 Dato

@@ -30,4 +30,9 @@ class AccountFactory extends Factory
     {
         return $this->state(fn (): array => ['on_budget' => false]);
     }
+
+    public function credit(): static
+    {
+        return $this->state(fn (): array => ['type' => AccountType::Credit, 'on_budget' => true]);
+    }
 }

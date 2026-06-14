@@ -24,6 +24,8 @@ export interface Transaction {
     memo: string | null;
     cleared: boolean;
     is_starting_balance: boolean;
+    transfer_id: number | null; // det andre benet i en overføring (null = vanlig transaksjon)
+    transfer_account?: string | null; // navnet på motkontoen i overføringen
 }
 
 export interface PageMeta {

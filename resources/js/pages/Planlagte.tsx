@@ -258,6 +258,7 @@ function ScheduledForm({
     const [payee, setPayee] = useState(existing?.payee ?? '');
     const [frequency, setFrequency] = useState<ScheduleFrequency>(existing?.frequency ?? 'monthly');
     const [startDate, setStartDate] = useState(existing?.start_date ?? todayIso());
+    const [nextDate, setNextDate] = useState(existing?.next_date ?? todayIso());
     const [endDate, setEndDate] = useState(existing?.end_date ?? '');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -279,6 +280,8 @@ function ScheduledForm({
             frequency,
             start_date: startDate,
             end_date: endDate || null,
+            // Ved redigering flytter vi neste forfall; startdatoen (ankeret) er uendret.
+            ...(existing ? { next_date: nextDate } : {}),
         };
         try {
             if (existing) {
@@ -393,15 +396,31 @@ function ScheduledForm({
                 </select>
             </label>
 
-            <label className="text-sm font-medium text-neutral-700">
-                Første dato
-                <input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 focus:border-neutral-900 focus:outline-none"
-                />
-            </label>
+            {existing ? (
+                <label className="text-sm font-medium text-neutral-700">
+                    Neste forfall
+                    <input
+                        type="date"
+                        value={nextDate}
+                        min={todayIso()}
+                        onChange={(e) => setNextDate(e.target.value)}
+                        className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 focus:border-neutral-900 focus:outline-none"
+                    />
+                    <span className="mt-1 block text-xs font-normal text-neutral-400">
+                        Flytter neste forekomst. Tidligere posteringer beholdes.
+                    </span>
+                </label>
+            ) : (
+                <label className="text-sm font-medium text-neutral-700">
+                    Første dato
+                    <input
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                        className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 focus:border-neutral-900 focus:outline-none"
+                    />
+                </label>
+            )}
 
             <label className="text-sm font-medium text-neutral-700">
                 Sluttdato (valgfritt)

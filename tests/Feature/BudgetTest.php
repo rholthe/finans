@@ -97,6 +97,36 @@ class BudgetTest extends TestCase
             ->assertJsonPath('ready_to_assign', 4000);
     }
 
+    public function test_kategorisert_forbruk_paavirker_ikke_ready_to_assign(): void
+    {
+        // Regnskapsidentitet: RTA + Σ(tilgjengelig) skal alltid = penger på konto.
+        // Kategorisert forbruk flytter penger fra RTA-pott til kategori, men skal
+        // aldri «forsvinne» ved å trekkes fra både kontosaldo og kategori.
+        $category = $this->category();
+        $account = $this->budgetAccount();
+
+        $account->transactions()->create([
+            'date' => '2026-01-01',
+            'amount' => 5000,
+            'is_starting_balance' => true,
+        ]);
+        $this->putJson("/api/budget/2026-01/categories/{$category->id}", ['assigned' => 1000]);
+
+        $account->transactions()->create([
+            'category_id' => $category->id,
+            'date' => '2026-01-15',
+            'amount' => -300,
+        ]);
+
+        $this->getJson('/api/budget?month=2026-01')
+            ->assertOk()
+            ->assertJsonPath('groups.0.categories.0.available', 700)
+            // Forbruket trekkes IKKE fra RTA – kun tildelingen gjør det.
+            ->assertJsonPath('ready_to_assign', 4000);
+
+        // Penger på konto (4700) = RTA (4000) + tilgjengelig (700). Ingen lekkasje.
+    }
+
     public function test_overvaaket_konto_paavirker_ikke_budsjett(): void
     {
         $category = $this->category();

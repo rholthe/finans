@@ -16,6 +16,7 @@ class Transaction extends Model
         'account_id',
         'category_id',
         'scheduled_transaction_id',
+        'transfer_id',
         'external_id',
         'bank_description',
         'rule_id',
@@ -72,5 +73,15 @@ class Transaction extends Model
     public function rule(): BelongsTo
     {
         return $this->belongsTo(Rule::class);
+    }
+
+    /**
+     * Det andre benet i en overføring (null for vanlige transaksjoner).
+     *
+     * @return BelongsTo<Transaction, $this>
+     */
+    public function transfer(): BelongsTo
+    {
+        return $this->belongsTo(Transaction::class, 'transfer_id');
     }
 }

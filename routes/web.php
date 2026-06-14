@@ -11,6 +11,7 @@ use App\Http\Controllers\RuleController;
 use App\Http\Controllers\ScheduledTransactionController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\TransactionController;
+use App\Http\Controllers\TransferController;
 use App\Http\Middleware\EnsureScheduledTransactionsPosted;
 use Illuminate\Support\Facades\Route;
 
@@ -37,6 +38,9 @@ Route::prefix('api')->group(function () {
         Route::post('accounts/{account}/transactions', [TransactionController::class, 'store']);
         Route::post('transactions/apply-rules', [TransactionController::class, 'applyRules']);
         Route::apiResource('transactions', TransactionController::class)->only(['update', 'destroy']);
+
+        // Overføring mellom to kontoer (parvise transaksjoner; sletting via transactions.destroy)
+        Route::post('transfers', [TransferController::class, 'store']);
 
         Route::apiResource('category-groups', CategoryGroupController::class)->except(['show']);
         Route::apiResource('categories', CategoryController::class)->only(['store', 'update', 'destroy']);

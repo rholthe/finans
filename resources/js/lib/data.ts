@@ -150,6 +150,20 @@ export async function deleteTransaction(id: number): Promise<void> {
     await api.delete(`/transactions/${id}`);
 }
 
+export interface NewTransfer {
+    from_account_id: number;
+    to_account_id: number;
+    amount: number; // positivt beløp
+    date: string;
+    memo?: string;
+}
+
+/** Overføring mellom to kontoer (to sammenkoblede ben). Returnerer fra-benet. */
+export async function createTransfer(payload: NewTransfer): Promise<Transaction> {
+    const res = await api.post<Wrapped<Transaction>>('/transfers', payload);
+    return res.data.data;
+}
+
 // --- Kategorier & kategorigrupper ---
 
 export async function listCategoryGroups(): Promise<CategoryGroup[]> {
@@ -239,6 +253,7 @@ export interface NewScheduledTransaction {
     memo?: string | null;
     frequency: ScheduleFrequency;
     start_date: string; // YYYY-MM-DD
+    next_date?: string; // YYYY-MM-DD – kun ved redigering (flytt neste forfall, aldri bakover)
     end_date?: string | null;
 }
 

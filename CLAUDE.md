@@ -41,7 +41,7 @@ Scheduleren kjører nattlig banksynk og postering av planlagte transaksjoner (se
 
 - `routes/web.php` — `/api/*`-ruter + SPA catch-all
 - `routes/console.php` — scheduler (nattlig banksynk-jobb + `transactions:post-due`)
-- `app/Http/Controllers/` — Auth, Account, Transaction, Budget, Category, CategoryGroup,
+- `app/Http/Controllers/` — Auth, Account, Transaction, Transfer, Budget, Category, CategoryGroup,
   Goal, ScheduledTransaction, Bank, Rule, Settings
 - `app/Http/Middleware/Authenticated.php` — alias `auth.session`, beskytter API-ruter
 - `app/Http/Middleware/EnsureScheduledTransactionsPosted.php` — posterer forfalte planlagte ved hvert API-kall
@@ -70,6 +70,17 @@ Scheduleren kjører nattlig banksynk og postering av planlagte transaksjoner (se
 - **«available» lagres aldri** — beregnes kumulativt (assigned + activity) i `BudgetService`,
   så redigering av historikk alltid gir korrekte tall. Samme for `needed` (mål) og kommende/
   projisert (planlagte poster).
+- **Ready to Assign = kun ukategoriserte inntekter − tildelt.** Kategorisert forbruk hører til
+  kategoriens `available`, ikke RTA. Identiteten `RTA + Σtilgjengelig = penger på budsjettkonto`
+  skal alltid holde (ingen lekkasje).
+- **Kredittkort = vanlig budsjettkonto som kan ha negativ saldo.** Ingen egen
+  betalingskategori. Et kjøp på kortet er et helt vanlig kategorisert forbruk (trekker
+  kategoriens `available`, ikke RTA), og gjelda reduserer «penger på konto». Kortet betales
+  ned med en overføring fra en annen konto. (En YNAB-stil betalingskategori ble vurdert og
+  forkastet til fordel for denne enkelheten.)
+- **Overføringer** er to sammenkoblede, ukategoriserte transaksjoner (`transactions.transfer_id`).
+  De nuller hverandre ut i RTA og brukes bl.a. til å betale ned kredittkort. Begge ben slettes
+  samlet; overføringer kan ikke redigeres (slett + opprett).
 - **Banksynk:** deduplisering per `account_id:external_id` (samme external_id kan gjelde flere
   kontoer). Rapport-e-post sendes til `BANK_SYNC_REPORT_EMAIL` ved både suksess og feil.
 - **Ingen YNAB-lengdegrenser** på payee/memo lenger. **Kun NOK** i første omgang.
@@ -84,7 +95,11 @@ Scheduleren kjører nattlig banksynk og postering av planlagte transaksjoner (se
 5. ✅ Auto-kategorisering (regelmotor: payee + memo + kategori, med avgrenset anvendelse + lås)
 6. ✅ Nattlig sync-jobb (kø + scheduler) + innstillinger (synk-dager) + gjenstående synk
 7. ✅ Planlagte/repeterende transaksjoner (regningsmodul: frekvens, auto-postering, projeksjon)
-8. ⬜ Avansert: kredittkort-betalingslogikk, avstemming, rapporter, 2. leverandør
+8. 🟡 Avansert:
+   - ✅ Kredittkort som vanlig konto (kan ha negativ saldo) + overføringer for nedbetaling
+   - ⬜ Avstemming (reconciliation)
+   - ⬜ Rapporter
+   - ⬜ 2. bankleverandør
 9. ⬜ Tverrgående: design/UX-polish + brukertilbakemeldinger (tas til slutt)
 
 ===

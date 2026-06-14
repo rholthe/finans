@@ -29,6 +29,12 @@ class TransactionResource extends JsonResource
             'memo' => $this->memo,
             'cleared' => $this->cleared,
             'is_starting_balance' => $this->is_starting_balance,
+            'transfer_id' => $this->transfer_id,
+            // Den andre kontoen i overføringen (for visning), når relasjonen er lastet.
+            'transfer_account' => $this->when(
+                $this->transfer_id !== null && $this->relationLoaded('transfer'),
+                fn () => $this->transfer?->account?->name,
+            ),
         ];
     }
 }

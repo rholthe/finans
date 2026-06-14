@@ -160,13 +160,19 @@ class BudgetService
     }
 
     /**
-     * Penger som venter på å bli fordelt = alle penger på budsjettkontoer
+     * Penger som venter på å bli fordelt = inntekter inn på budsjettkontoer
      * (t.o.m. måneden) minus alt som er tildelt (t.o.m. måneden).
+     *
+     * Kun *ukategoriserte* transaksjoner (inntekt/innskudd) teller som tilflyt til
+     * RTA. Kategorisert forbruk hører hjemme i kategoriens «available», ikke her –
+     * teller vi det med, trekkes forbruket fra to ganger og pengene «lekker» ut av
+     * regnskapet (identiteten RTA + Σtilgjengelig = penger på konto brytes).
      */
     private function readyToAssign(CarbonImmutable $start, CarbonImmutable $end): float
     {
         $inBudget = (float) Transaction::query()
             ->whereHas('account', fn ($q) => $q->where('on_budget', true))
+            ->whereNull('category_id')
             ->where('date', '<=', $end->toDateString())
             ->sum('amount');
 

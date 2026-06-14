@@ -41,8 +41,13 @@ class ScheduledTransactionController extends Controller
     {
         $validated = $this->validatePayload($request, partial: true);
 
-        // Hvis startdato flyttes før noe er postert, flytt også neste forfall.
-        if (isset($validated['start_date']) && $scheduledTransaction->last_posted_date === null) {
+        // Hvis startdato flyttes før noe er postert (og neste forfall ikke settes
+        // eksplisitt), flytt også neste forfall.
+        if (
+            isset($validated['start_date'])
+            && ! isset($validated['next_date'])
+            && $scheduledTransaction->last_posted_date === null
+        ) {
             $validated['next_date'] = $validated['start_date'];
         }
 
@@ -73,6 +78,8 @@ class ScheduledTransactionController extends Controller
             'memo' => ['nullable', 'string'],
             'frequency' => [$required, Rule::enum(ScheduleFrequency::class)],
             'start_date' => [$required, 'date'],
+            // Neste forfall kan flyttes ved redigering, men aldri bakover i tid.
+            'next_date' => ['sometimes', 'date', 'after_or_equal:today'],
             'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
         ]);
     }

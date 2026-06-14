@@ -60,6 +60,37 @@ class ScheduledTransactionTest extends TestCase
         ])->assertStatus(422);
     }
 
+    public function test_kan_flytte_neste_forfall_framover_uten_aa_roere_startdato(): void
+    {
+        // Serie som allerede har postert noen forekomster (brukerens scenario).
+        $schedule = ScheduledTransaction::factory()
+            ->startingOn('2020-01-12')
+            ->create([
+                'last_posted_date' => '2020-03-12',
+                'next_date' => now()->addMonth()->toDateString(),
+            ]);
+
+        $target = now()->addMonths(3)->toDateString();
+
+        $this->patchJson("/api/scheduled-transactions/{$schedule->id}", ['next_date' => $target])
+            ->assertOk()
+            ->assertJsonPath('data.next_date', $target);
+
+        $schedule->refresh();
+        $this->assertSame($target, $schedule->next_date->toDateString());
+        // Startdatoen (det historiske ankeret) er uendret.
+        $this->assertSame('2020-01-12', $schedule->start_date->toDateString());
+    }
+
+    public function test_kan_ikke_sette_neste_forfall_i_fortiden(): void
+    {
+        $schedule = ScheduledTransaction::factory()->startingOn('2020-01-12')->create();
+
+        $this->patchJson("/api/scheduled-transactions/{$schedule->id}", [
+            'next_date' => now()->subDay()->toDateString(),
+        ])->assertStatus(422);
+    }
+
     public function test_lister_og_sletter(): void
     {
         $scheduled = ScheduledTransaction::factory()->startingOn('2030-01-01')->create();

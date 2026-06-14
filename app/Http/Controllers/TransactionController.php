@@ -9,6 +9,7 @@ use App\Services\Rules\ReapplyRules;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class TransactionController extends Controller
@@ -26,6 +27,7 @@ class TransactionController extends Controller
         ]);
 
         $transactions = $account->transactions()
+            ->with('transfer.account')
             ->when($validated['from'] ?? null, fn ($q, $from) => $q->whereDate('date', '>=', $from))
             ->when($validated['to'] ?? null, fn ($q, $to) => $q->whereDate('date', '<=', $to))
             ->orderByDesc('date')
@@ -47,8 +49,16 @@ class TransactionController extends Controller
             ->setStatusCode(201);
     }
 
-    public function update(Request $request, Transaction $transaction): TransactionResource
+    public function update(Request $request, Transaction $transaction): TransactionResource|JsonResponse
     {
+        // Overføringer er to sammenkoblede ben; redigering ville desynke paret.
+        if ($transaction->transfer_id !== null) {
+            return response()->json(
+                ['message' => 'Overføringer kan ikke redigeres – slett og opprett på nytt.'],
+                422,
+            );
+        }
+
         $validated = $this->validatePayload($request, partial: true);
 
         // En manuell endring av regelstyrte felter låser raden, slik at
@@ -64,7 +74,11 @@ class TransactionController extends Controller
 
     public function destroy(Transaction $transaction): JsonResponse
     {
-        $transaction->delete();
+        // En overføring slettes som et hele: fjern begge ben.
+        DB::transaction(function () use ($transaction): void {
+            $transaction->transfer?->delete();
+            $transaction->delete();
+        });
 
         return response()->json(status: 204);
     }
