@@ -40,13 +40,12 @@ class ReapplyRules
 
     /**
      * Kjør reglene på et avgrenset sett transaksjoner (det brukeren ser etter
-     * filtrering/paginering). Hopper over låste og – med mindre $includeMatched
-     * – allerede matchede.
+     * filtrering/paginering). Hopper alltid over låste og allerede matchede.
      *
      * @param  array<int, int>  $ids
      * @return int Antall endret
      */
-    public function applyToIds(array $ids, bool $includeMatched = false): int
+    public function applyToIds(array $ids): int
     {
         if ($ids === []) {
             return 0;
@@ -57,7 +56,7 @@ class ReapplyRules
 
         $this->baseQuery()
             ->whereIn('id', $ids)
-            ->when(! $includeMatched, fn ($q) => $q->whereNull('rule_id'))
+            ->whereNull('rule_id')
             ->chunkById(200, function ($transactions) use (&$changed): void {
                 foreach ($transactions as $transaction) {
                     if ($this->reapply($transaction)) {

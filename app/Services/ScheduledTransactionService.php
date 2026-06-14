@@ -55,6 +55,9 @@ class ScheduledTransactionService
                 'payee' => $schedule->payee,
                 'memo' => $schedule->memo,
                 'cleared' => false,
+                // Låst slik at regelmotoren aldri overskriver en planlagt postering
+                // (samme beskyttelse som manuelt redigerte transaksjoner).
+                'locked' => true,
             ]);
 
             $schedule->last_posted_date = $cursor->toDateString();

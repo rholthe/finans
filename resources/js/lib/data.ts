@@ -127,13 +127,9 @@ export async function getTransactions(
 }
 
 /** Kjør reglene på et avgrenset sett (de viste transaksjonene). Returnerer antall oppdatert. */
-export async function applyRulesToTransactions(
-    ids: number[],
-    includeMatched = false,
-): Promise<number> {
+export async function applyRulesToTransactions(ids: number[]): Promise<number> {
     const res = await api.post<{ updated: number }>('/transactions/apply-rules', {
         transaction_ids: ids,
-        include_matched: includeMatched,
     });
     return res.data.updated;
 }

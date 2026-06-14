@@ -124,20 +124,14 @@ class RuleTest extends TestCase
         $this->assertSame('KORTKJØP REMA 1000 OSLO', $transaction->fresh()->payee);
     }
 
-    public function test_apply_rules_hopper_over_allerede_matchede_som_standard(): void
+    public function test_apply_rules_hopper_over_allerede_matchede(): void
     {
         $rule = Rule::factory()->create(['match_contains' => 'REMA', 'set_payee' => 'Rema 1000']);
         $transaction = $this->bankTransaction(['rule_id' => $rule->id, 'payee' => 'Rema 1000']);
 
-        // Uten include_matched: allerede matchet → hoppes over.
+        // Allerede matchet (rule_id satt) → hoppes alltid over.
         $this->postJson('/api/transactions/apply-rules', ['transaction_ids' => [$transaction->id]])
             ->assertJsonPath('updated', 0);
-
-        // Med include_matched: re-evalueres (her settes memo fra bankteksten).
-        $this->postJson('/api/transactions/apply-rules', [
-            'transaction_ids' => [$transaction->id],
-            'include_matched' => true,
-        ])->assertJsonPath('updated', 1);
     }
 
     public function test_manuell_redigering_laaser_transaksjonen(): void

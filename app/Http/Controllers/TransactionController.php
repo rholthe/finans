@@ -94,20 +94,16 @@ class TransactionController extends Controller
 
     /**
      * Kjør reglene på et avgrenset sett transaksjoner (det brukeren ser etter
-     * filtrering/paginering). Låste og – som standard – allerede matchede hoppes over.
+     * filtrering/paginering). Låste og allerede matchede hoppes alltid over.
      */
     public function applyRules(Request $request, ReapplyRules $service): JsonResponse
     {
         $validated = $request->validate([
             'transaction_ids' => ['required', 'array'],
             'transaction_ids.*' => ['integer'],
-            'include_matched' => ['sometimes', 'boolean'],
         ]);
 
-        $updated = $service->applyToIds(
-            $validated['transaction_ids'],
-            $validated['include_matched'] ?? false,
-        );
+        $updated = $service->applyToIds($validated['transaction_ids']);
 
         return response()->json(['updated' => $updated]);
     }

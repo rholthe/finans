@@ -49,7 +49,6 @@ export default function AccountDetail() {
 
     const [editingId, setEditingId] = useState<number | null>(null);
     const [ruleForTx, setRuleForTx] = useState<Transaction | null>(null);
-    const [includeMatched, setIncludeMatched] = useState(false);
     const [notice, setNotice] = useState<string | null>(null);
     const [showReconcile, setShowReconcile] = useState(false);
 
@@ -98,13 +97,16 @@ export default function AccountDetail() {
         reload();
     }
 
+    // Transaksjoner en regelkjøring faktisk vil treffe: bank-importerte, ulåste
+    // og ikke allerede matchet (samme filter som backend bruker).
+    const ruleCandidates = transactions.filter(
+        (t) => t.bank_description !== null && !t.locked && t.rule_id === null,
+    );
+
     async function applyToShown() {
         setNotice(null);
-        const updated = await applyRulesToTransactions(
-            transactions.map((t) => t.id),
-            includeMatched,
-        );
-        setNotice(`Oppdaterte ${updated} av ${transactions.length} viste transaksjon(er).`);
+        const updated = await applyRulesToTransactions(ruleCandidates.map((t) => t.id));
+        setNotice(`Oppdaterte ${updated} av ${ruleCandidates.length} transaksjon(er).`);
         reload();
     }
 
@@ -251,21 +253,13 @@ export default function AccountDetail() {
                 )}
 
                 <div className="ml-auto flex items-center gap-3">
-                    <label className="flex items-center gap-1 text-xs text-neutral-500">
-                        <input
-                            type="checkbox"
-                            checked={includeMatched}
-                            onChange={(e) => setIncludeMatched(e.target.checked)}
-                            className="h-4 w-4"
-                        />
-                        inkl. matchede
-                    </label>
                     <button
                         onClick={applyToShown}
-                        disabled={transactions.length === 0}
+                        disabled={ruleCandidates.length === 0}
+                        title="Kjør regler på viste, ulåste og ikke allerede matchede transaksjoner"
                         className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-50"
                     >
-                        Oppdater viste ({transactions.length})
+                        Oppdater viste ({ruleCandidates.length})
                     </button>
                 </div>
             </div>

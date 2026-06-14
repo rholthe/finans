@@ -118,6 +118,8 @@ class ScheduledTransactionTest extends TestCase
         $transaction = $account->transactions()->where('scheduled_transaction_id', $schedule->id)->sole();
         $this->assertSame('2026-01-10', $transaction->date->toDateString());
         $this->assertSame(-500.0, (float) $transaction->amount);
+        // Planlagte posteringer låses så regelmotoren aldri overskriver dem.
+        $this->assertTrue($transaction->locked);
 
         $schedule->refresh();
         $this->assertSame('2026-02-10', $schedule->next_date->toDateString());
