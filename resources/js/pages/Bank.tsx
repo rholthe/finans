@@ -12,7 +12,15 @@ import {
     listInstitutions,
     syncBank,
 } from '@/lib/data';
-import type { Account, BankAccountLink, BankConnection, Institution, SyncResult } from '@/types';
+import {
+    BANK_PROVIDER_LABELS,
+    type Account,
+    type BankAccountLink,
+    type BankConnection,
+    type BankProvider,
+    type Institution,
+    type SyncResult,
+} from '@/types';
 
 /** «3 av 4 igjen» + når kvoten nullstilles, fra sist kjente rate-limit. */
 function rateLimitLabel(a: BankAccountLink): string | null {
@@ -28,6 +36,11 @@ function rateLimitLabel(a: BankAccountLink): string | null {
 
 const SANDBOX_ID = 'SANDBOXFINANCE_SFIN0000';
 
+/** Normaliserte «linket»-statuser på tvers av leverandører (GoCardless «LN», Enable Banking «AUTHORIZED»/«VALID»). */
+function isLinked(status: string): boolean {
+    return ['LN', 'AUTHORIZED', 'VALID'].includes(status);
+}
+
 const CALLBACK_MESSAGES: Record<string, { tone: 'ok' | 'error'; text: string }> = {
     connected: { tone: 'ok', text: 'Banken ble koblet til. Koble kontoene til budsjettkontoer nedenfor.' },
     'error:token': { tone: 'error', text: 'Sikkerhetstoken stemte ikke. Prøv tilkoblingen på nytt.' },
@@ -42,6 +55,7 @@ export default function Bank() {
     const [connections, setConnections] = useState<BankConnection[]>([]);
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [loading, setLoading] = useState(true);
+    const [provider, setProvider] = useState<BankProvider>('gocardless');
     const [chosen, setChosen] = useState(SANDBOX_ID);
     const [connecting, setConnecting] = useState(false);
     const [syncing, setSyncing] = useState(false);
@@ -59,18 +73,33 @@ export default function Bank() {
     }
 
     useEffect(() => {
-        Promise.all([
-            listInstitutions().then(setInstitutions).catch(() => setInstitutions([])),
-            reloadConnections(),
-            listAccounts().then(setAccounts),
-        ]).finally(() => setLoading(false));
+        Promise.all([reloadConnections(), listAccounts().then(setAccounts)]).finally(() =>
+            setLoading(false),
+        );
     }, []);
 
+    // Institusjonslisten avhenger av valgt leverandør.
+    useEffect(() => {
+        let active = true;
+        listInstitutions(provider)
+            .then((list) => active && setInstitutions(list))
+            .catch(() => active && setInstitutions([]));
+        // GoCardless har en sandbox-bank; andre leverandører velger første ekte bank.
+        setChosen(provider === 'gocardless' ? SANDBOX_ID : '');
+        return () => {
+            active = false;
+        };
+    }, [provider]);
+
     async function connect() {
+        if (!chosen) {
+            setError('Velg en bank.');
+            return;
+        }
         setConnecting(true);
         setError(null);
         try {
-            const link = await connectBank(chosen);
+            const link = await connectBank(provider, chosen);
             window.location.href = link; // topp-nivå navigasjon til bankens samtykkeside
         } catch (e) {
             setError(apiErrorMessage(e, 'Kunne ikke starte banktilkobling.'));
@@ -174,6 +203,20 @@ export default function Bank() {
 
             {/* Koble til ny bank */}
             <div className="mt-6 flex flex-wrap items-end gap-3 rounded-xl border border-neutral-200 bg-white p-5">
+                <label className="text-sm font-medium text-neutral-700">
+                    Leverandør
+                    <select
+                        value={provider}
+                        onChange={(e) => setProvider(e.target.value as BankProvider)}
+                        className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 focus:border-neutral-900 focus:outline-none"
+                    >
+                        {(Object.keys(BANK_PROVIDER_LABELS) as BankProvider[]).map((key) => (
+                            <option key={key} value={key}>
+                                {BANK_PROVIDER_LABELS[key]}
+                            </option>
+                        ))}
+                    </select>
+                </label>
                 <label className="flex-1 text-sm font-medium text-neutral-700">
                     Velg bank
                     <select
@@ -181,7 +224,8 @@ export default function Bank() {
                         onChange={(e) => setChosen(e.target.value)}
                         className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 focus:border-neutral-900 focus:outline-none"
                     >
-                        <option value={SANDBOX_ID}>Sandbox (test)</option>
+                        {provider === 'gocardless' && <option value={SANDBOX_ID}>Sandbox (test)</option>}
+                        {provider !== 'gocardless' && <option value="">Velg bank …</option>}
                         {institutions.map((inst) => (
                             <option key={inst.id} value={inst.id}>
                                 {inst.name}
@@ -210,14 +254,17 @@ export default function Bank() {
                             <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3">
                                 <div className="flex items-center gap-2">
                                     <span className="font-semibold">{connection.name}</span>
+                                    <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-500">
+                                        {BANK_PROVIDER_LABELS[connection.provider] ?? connection.provider}
+                                    </span>
                                     <span
                                         className={`rounded px-1.5 py-0.5 text-xs ${
-                                            connection.status === 'LN'
+                                            isLinked(connection.status)
                                                 ? 'bg-green-100 text-green-700'
                                                 : 'bg-amber-100 text-amber-700'
                                         }`}
                                     >
-                                        {connection.status === 'LN' ? 'Tilkoblet' : connection.status}
+                                        {isLinked(connection.status) ? 'Tilkoblet' : connection.status}
                                     </span>
                                 </div>
                                 <button

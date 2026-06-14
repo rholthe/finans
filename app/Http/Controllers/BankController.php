@@ -6,7 +6,7 @@ use App\Jobs\SyncBankTransactionsJob;
 use App\Models\BankAccount;
 use App\Models\BankConnection;
 use App\Models\SyncEvent;
-use App\Services\Bank\BankDataProvider;
+use App\Services\Bank\BankProviderRegistry;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -17,16 +17,21 @@ use Throwable;
 
 class BankController extends Controller
 {
-    public function __construct(private readonly BankDataProvider $provider) {}
+    public function __construct(private readonly BankProviderRegistry $providers) {}
 
     /**
-     * Liste over institusjoner (banker) for et land.
+     * Liste over institusjoner (banker) for et land, for en valgt leverandør.
      */
     public function institutions(Request $request): JsonResponse
     {
         $country = $request->string('country', 'NO')->upper()->value();
+        $providerKey = $request->string('provider')->value() ?: BankProviderRegistry::DEFAULT;
 
-        return response()->json($this->provider->getInstitutions($country));
+        if (! $this->providers->isValid($providerKey)) {
+            return response()->json(['message' => 'Ukjent bankleverandør.'], 422);
+        }
+
+        return response()->json($this->providers->get($providerKey)->getInstitutions($country));
     }
 
     /**
@@ -37,6 +42,7 @@ class BankController extends Controller
         $connections = BankConnection::with('bankAccounts')->orderBy('name')->get()
             ->map(fn (BankConnection $c): array => [
                 'id' => $c->id,
+                'provider' => $c->provider,
                 'name' => $c->name,
                 'institution_id' => $c->institution_id,
                 'status' => $c->status,
@@ -56,21 +62,27 @@ class BankController extends Controller
     }
 
     /**
-     * Start en banktilkobling: lag requisition og returner lenken brukeren
-     * sendes til. Referansen lagres i økten for CSRF-verifisering i callback.
+     * Start en banktilkobling: opprett et samtykke hos valgt leverandør og
+     * returner lenken brukeren sendes til. Referansen lagres i økten for
+     * CSRF-verifisering i callback.
      */
     public function connect(Request $request): JsonResponse
     {
-        $validated = $request->validate(['institution_id' => ['required', 'string']]);
+        $validated = $request->validate([
+            'institution_id' => ['required', 'string'],
+            'provider' => ['sometimes', Rule::in($this->providers->keys())],
+        ]);
 
+        $providerKey = $validated['provider'] ?? BankProviderRegistry::DEFAULT;
         $reference = (string) Str::uuid();
-        $requisition = $this->provider->createRequisition($validated['institution_id'], $reference);
+        $consent = $this->providers->get($providerKey)->createConsent($validated['institution_id'], $reference);
 
         $request->session()->put('bank_ref', $reference);
-        $request->session()->put('bank_requisition_id', $requisition['id']);
+        $request->session()->put('bank_provider', $providerKey);
+        $request->session()->put('bank_consent_id', $consent->id);
         $request->session()->put('bank_institution_id', $validated['institution_id']);
 
-        return response()->json(['link' => $requisition['link']]);
+        return response()->json(['link' => $consent->link]);
     }
 
     /**
@@ -80,38 +92,43 @@ class BankController extends Controller
     public function callback(Request $request): RedirectResponse
     {
         $expected = $request->session()->pull('bank_ref');
-        $requisitionId = $request->session()->pull('bank_requisition_id');
+        $providerKey = $request->session()->pull('bank_provider', BankProviderRegistry::DEFAULT);
+        $consentId = $request->session()->pull('bank_consent_id');
         $institutionId = $request->session()->pull('bank_institution_id');
 
-        if (! $request->filled('ref') || ! $expected || ! hash_equals($expected, $request->input('ref'))) {
-            return redirect('/bank?status=error&reason=token');
-        }
-
-        if (! $requisitionId || ! $institutionId) {
+        if (! $this->providers->isValid($providerKey) || ! $institutionId) {
             return redirect('/bank?status=error&reason=session');
         }
 
+        $provider = $this->providers->get($providerKey);
+        $reference = $provider->callbackReference($request->query());
+
+        if (! $reference || ! $expected || ! hash_equals($expected, $reference)) {
+            return redirect('/bank?status=error&reason=token');
+        }
+
         try {
-            $requisition = $this->provider->getRequisition($requisitionId);
-            $accountIds = $requisition['accounts'] ?? [];
+            $consent = $provider->completeConsent($request->query(), $consentId ?: null);
+            $accountIds = $consent->accountIds;
 
             // Dupliseringssjekk: avbryt hvis en av kontoene allerede finnes.
             if (BankAccount::whereIn('external_id', $accountIds)->exists()) {
                 return redirect('/bank?status=error&reason=duplicate');
             }
 
-            $name = collect($this->provider->getInstitutions('NO'))
+            $name = collect($provider->getInstitutions('NO'))
                 ->firstWhere('id', $institutionId)['name'] ?? $institutionId;
 
             $connection = BankConnection::create([
+                'provider' => $providerKey,
                 'institution_id' => $institutionId,
                 'name' => $name,
-                'requisition_id' => $requisitionId,
-                'status' => $requisition['status'] ?? 'LN',
+                'consent_id' => $consent->id,
+                'status' => $consent->status,
             ]);
 
             foreach ($accountIds as $accountId) {
-                $details = $this->provider->getAccountDetails($accountId);
+                $details = $provider->getAccountDetails($accountId);
                 $connection->bankAccounts()->create([
                     'external_id' => $accountId,
                     'iban' => $details['iban'] ?? data_get($details, 'account.iban'),
@@ -146,11 +163,11 @@ class BankController extends Controller
      */
     public function deleteConnection(BankConnection $bankConnection): JsonResponse
     {
-        if ($bankConnection->requisition_id) {
+        if ($bankConnection->consent_id) {
             try {
-                $this->provider->deleteRequisition($bankConnection->requisition_id);
+                $this->providers->get($bankConnection->provider)->deleteConsent($bankConnection->consent_id);
             } catch (Throwable $e) {
-                Log::warning('Kunne ikke slette requisition hos leverandøren: '.$e->getMessage());
+                Log::warning('Kunne ikke slette samtykket hos leverandøren: '.$e->getMessage());
             }
         }
 

@@ -8,9 +8,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class BankConnection extends Model
 {
     protected $fillable = [
+        'provider',
         'institution_id',
         'name',
-        'requisition_id',
+        'consent_id',
         'status',
     ];
 

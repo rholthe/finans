@@ -5,38 +5,58 @@ namespace App\Services\Bank;
 use Carbon\CarbonImmutable;
 
 /**
- * Abstraksjon over en bankaggregator (GoCardless osv.). Ny leverandør = ny
- * klasse som implementerer dette; ingen endring i budsjett- eller synklogikk.
+ * Abstraksjon over en bankaggregator (GoCardless, Enable Banking osv.). Ny
+ * leverandør = ny klasse som implementerer dette og registreres i
+ * {@see BankProviderRegistry}; ingen endring i budsjett- eller synklogikk.
+ *
+ * Grensesnittet er leverandøruavhengig: samtykkeflyten uttrykkes som «consent»
+ * (ikke GoCardless-spesifikk «requisition»), og status normaliseres til
+ * {@see BankConsent::$linked} i stedet for leverandørkoder som «LN».
  */
 interface BankDataProvider
 {
     /**
-     * Liste over støttede institusjoner for et land.
+     * Liste over støttede institusjoner (banker) for et land. Hvert element har
+     * minst `id` og `name`.
      *
      * @return array<int, array<string, mixed>>
      */
     public function getInstitutions(string $country = 'NO'): array;
 
     /**
-     * Opprett en requisition (samtykkeforespørsel). Returnerer minst
-     * `id` og `link` (URL brukeren sendes til for å godkjenne).
-     *
-     * @return array<string, mixed>
+     * Start en samtykkeflyt. Returnert {@see BankConsent} har en `link` brukeren
+     * sendes til; `id` kan være tom hvis leverandøren først tildeler den etter
+     * godkjenning (da fastsettes den i {@see completeConsent()}).
      */
-    public function createRequisition(string $institutionId, string $reference): array;
-
-    public function deleteRequisition(string $requisitionId): void;
+    public function createConsent(string $institutionId, string $reference): BankConsent;
 
     /**
-     * Status for en requisition. Inneholder minst `status` ('LN' = linket)
-     * og `accounts` (liste med eksterne konto-id-er).
+     * Fullfør samtykket etter at brukeren er sendt tilbake (callback). Mottar
+     * rå spørringsparametere fra callback-URL-en og den eventuelle consent-id-en
+     * fra opprettelsen. Returnerer det koblede samtykket med konto-id-er.
      *
-     * @return array<string, mixed>
+     * @param  array<string, mixed>  $callback
      */
-    public function getRequisition(string $requisitionId): array;
+    public function completeConsent(array $callback, ?string $consentId): BankConsent;
 
     /**
-     * Detaljer for en konto. Inneholder minst `status` ('READY') og `iban`.
+     * Hent gjeldende status og konto-id-er for et eksisterende samtykke (brukes
+     * ved synk for å verifisere at koblingen fortsatt er aktiv).
+     */
+    public function getConsent(string $consentId): BankConsent;
+
+    public function deleteConsent(string $consentId): void;
+
+    /**
+     * Trekk ut referansen (CSRF-tokenet) leverandøren ekko-er tilbake i
+     * callback-en, slik at den kan sammenlignes med den lagrede i økten.
+     *
+     * @param  array<string, mixed>  $callback
+     */
+    public function callbackReference(array $callback): ?string;
+
+    /**
+     * Detaljer for en konto. Inneholder minst `iban`.
      *
      * @return array<string, mixed>
      */

@@ -10,8 +10,8 @@ use App\Models\Category;
 use App\Models\Rule;
 use App\Models\SyncEvent;
 use App\Models\Transaction;
-use App\Services\Bank\BankDataProvider;
 use App\Services\Bank\BankSyncService;
+use App\Services\Bank\GoCardlessProvider;
 use App\Services\Bank\NormalizedTransaction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
@@ -31,7 +31,7 @@ class BankSyncTest extends TestCase
         Mail::fake();
 
         $this->provider = new FakeBankProvider;
-        $this->app->instance(BankDataProvider::class, $this->provider);
+        $this->app->instance(GoCardlessProvider::class, $this->provider);
     }
 
     private function tx(string $id, float $amount, string $date = '2026-01-10', string $payee = 'Butikk'): NormalizedTransaction
@@ -45,10 +45,10 @@ class BankSyncTest extends TestCase
         $connection = BankConnection::create([
             'institution_id' => 'SANDBOXFINANCE_SFIN0000',
             'name' => 'Sandbox',
-            'requisition_id' => 'req1',
+            'consent_id' => 'req1',
             'status' => 'LN',
         ]);
-        $this->provider->requisitions['req1'] = ['status' => 'LN', 'accounts' => ['acc1']];
+        $this->provider->consents['req1'] = ['status' => 'LN', 'accounts' => ['acc1']];
 
         return $connection->bankAccounts()->create([
             'account_id' => $account->id,
@@ -112,10 +112,10 @@ class BankSyncTest extends TestCase
         $connection = BankConnection::create([
             'institution_id' => 'SANDBOXFINANCE_SFIN0000',
             'name' => 'Sandbox',
-            'requisition_id' => 'req1',
+            'consent_id' => 'req1',
             'status' => 'LN',
         ]);
-        $this->provider->requisitions['req1'] = ['status' => 'LN', 'accounts' => ['acc1', 'acc2']];
+        $this->provider->consents['req1'] = ['status' => 'LN', 'accounts' => ['acc1', 'acc2']];
         $connection->bankAccounts()->create(['account_id' => $account1->id, 'external_id' => 'acc1']);
         $connection->bankAccounts()->create(['account_id' => $account2->id, 'external_id' => 'acc2']);
 
@@ -151,10 +151,10 @@ class BankSyncTest extends TestCase
         $connection = BankConnection::create([
             'institution_id' => 'SANDBOXFINANCE_SFIN0000',
             'name' => 'Sandbox',
-            'requisition_id' => 'req1',
+            'consent_id' => 'req1',
             'status' => 'LN',
         ]);
-        $this->provider->requisitions['req1'] = ['status' => 'LN', 'accounts' => ['acc1']];
+        $this->provider->consents['req1'] = ['status' => 'LN', 'accounts' => ['acc1']];
         $connection->bankAccounts()->create(['external_id' => 'acc1', 'account_id' => null]);
         $this->provider->transactions['acc1'] = [$this->tx('tx-1', -300)];
 
@@ -178,7 +178,7 @@ class BankSyncTest extends TestCase
     public function test_ikke_linket_bank_gir_status_med_feil(): void
     {
         $this->linkedAccount();
-        $this->provider->requisitions['req1'] = ['status' => 'EX', 'accounts' => ['acc1']]; // utløpt
+        $this->provider->consents['req1'] = ['status' => 'EX', 'accounts' => ['acc1']]; // utløpt
         $this->provider->transactions['acc1'] = [$this->tx('tx-1', -300)];
 
         $event = $this->sync();

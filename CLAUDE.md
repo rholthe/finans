@@ -7,6 +7,7 @@ Penger som kommer inn → "Ready to Assign" → fordeles til kategorier i katego
 
 - **Backend:** Laravel 12 (PHP 8.4) som JSON-API. SQLite lokalt.
 - **Frontend:** React 19 + TypeScript + React Router 7, bygget med Vite. Tailwind 4.
+  Diagrammer med Recharts (kun lastet på Rapporter-siden via lazy/Suspense).
 - **Auth:** Enkeltpassord (hele appen), session-cookie med 1 års levetid. Ingen brukertabell-innlogging.
 - **Kø/cache:** `database`-driver lokalt (ingen Redis-ext lokalt; bytt til Redis i prod).
 
@@ -41,15 +42,18 @@ Scheduleren kjører nattlig banksynk og postering av planlagte transaksjoner (se
 
 - `routes/web.php` — `/api/*`-ruter + SPA catch-all
 - `routes/console.php` — scheduler (nattlig banksynk-jobb + `transactions:post-due`)
-- `app/Http/Controllers/` — Auth, Account, Transaction, Transfer, Reconciliation, Budget, Category,
-  CategoryGroup, Goal, ScheduledTransaction, Bank, Rule, Settings
+- `app/Http/Controllers/` — Auth, Account, Transaction, Transfer, Reconciliation, Report, Budget,
+  Category, CategoryGroup, Goal, ScheduledTransaction, Bank, Rule, Settings
 - `app/Http/Middleware/Authenticated.php` — alias `auth.session`, beskytter API-ruter
 - `app/Http/Middleware/EnsureScheduledTransactionsPosted.php` — posterer forfalte planlagte ved hvert API-kall
-- `app/Services/Bank/` — `BankDataProvider`-grensesnitt, `GoCardlessProvider`,
-  `NormalizedTransaction`-DTO, `BankSyncService`, `Mapping/` (per-bank feltmapping)
+- `app/Services/Bank/` — `BankDataProvider`-grensesnitt (leverandøruavhengig, «consent»),
+  `BankConsent`-DTO, `BankProviderRegistry` (velger leverandør per tilkobling),
+  `GoCardlessProvider`, `EnableBankingProvider`, `NormalizedTransaction`-DTO,
+  `BankSyncService`, `Mapping/` (per-bank feltmapping)
 - `app/Services/Rules/` — `RuleEngine`, `RuleResult`, `ReapplyRules` (leverandøruavhengig)
 - `app/Services/` — `BudgetService` (beregner available/RTA), `GoalService`, `ScheduledTransactionService`,
-  `ReconciliationService` (avstemming: klarert saldo → justering)
+  `ReconciliationService` (avstemming: klarert saldo → justering),
+  `ReportService` (rapportaggregeringer fra transactions)
 - `app/Jobs/SyncBankTransactionsJob.php` — køet banksynk (WithoutOverlapping)
 - `app/Support/AppSettings.php` — brukerstyrte innstillinger (nøkkel/verdi)
 - `app/Enums/` — `AccountType`, `GoalType`, `ScheduleFrequency`, `RuleApplies`
@@ -61,10 +65,13 @@ Scheduleren kjører nattlig banksynk og postering av planlagte transaksjoner (se
 
 ## Arkitektur-prinsipper
 
-- **Bankleverandør bak abstraksjon:** all aggregator-tilgang (GoCardless osv.) går via et
-  `BankDataProvider`-grensesnitt → normalisert `NormalizedTransaction`-DTO → per-bank
-  feltmapping. Ny leverandør = ny klasse (bind i `AppServiceProvider`), ingen endring i
-  budsjett-/synklogikk. Mønsteret er portet fra referanse-appen.
+- **Bankleverandør bak abstraksjon:** all aggregator-tilgang (GoCardless, Enable Banking) går
+  via et leverandøruavhengig `BankDataProvider`-grensesnitt → normalisert `BankConsent`/
+  `NormalizedTransaction`-DTO → per-bank feltmapping. Samtykkeflyten er nøytral («consent», ikke
+  GoCardless «requisition»), og status normaliseres til `BankConsent::$linked` (ikke koder som
+  «LN»). Ny leverandør = ny klasse registrert i `BankProviderRegistry`; hver tilkobling lagrer
+  sin `provider`, så flere leverandører kan være aktive samtidig. Ingen endring i budsjett-/
+  synklogikk. Mønsteret er portet fra referanse-appen.
 - **Regelmotor er leverandøruavhengig:** `RuleEngine` tar info-teksten (`bank_description`)
   + beløp og setter payee/memo/kategori. Anvendes ved import og på et avgrenset, brukervalgt
   sett på kontosiden — aldri globalt. Manuelt redigerte rader er `locked` og overskrives aldri.
@@ -105,8 +112,8 @@ Scheduleren kjører nattlig banksynk og postering av planlagte transaksjoner (se
 8. 🟡 Avansert:
    - ✅ Kredittkort som vanlig konto (kan ha negativ saldo) + overføringer for nedbetaling
    - ✅ Avstemming (reconciliation)
-   - ⬜ Rapporter
-   - ⬜ 2. bankleverandør
+   - ✅ Rapporter (forbruk per kategori, inntekt/forbruk, kategoritrend, nettoformue – Recharts)
+   - ✅ 2. bankleverandør (Enable Banking; normalisert consent-grensesnitt + provider-kolonne)
 9. ⬜ Tverrgående: design/UX-polish + brukertilbakemeldinger (tas til slutt)
 
 ===

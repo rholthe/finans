@@ -2,13 +2,15 @@
 
 namespace Tests\Support;
 
+use App\Services\Bank\BankConsent;
 use App\Services\Bank\BankDataProvider;
 use App\Services\Bank\NormalizedTransaction;
 use Carbon\CarbonImmutable;
 
 /**
  * Konfigurerbar test-double for BankDataProvider. Lar oss teste synk- og
- * tilkoblingslogikk uten å treffe et ekte API.
+ * tilkoblingslogikk uten å treffe et ekte API. `consents` (tidl. requisitions)
+ * holder status + konto-id-er per consent-id.
  */
 class FakeBankProvider implements BankDataProvider
 {
@@ -16,7 +18,7 @@ class FakeBankProvider implements BankDataProvider
     public array $institutions = [];
 
     /** @var array<string, array<string, mixed>> */
-    public array $requisitions = [];
+    public array $consents = [];
 
     /** @var array<string, array<string, mixed>> */
     public array $accountDetails = [];
@@ -32,16 +34,41 @@ class FakeBankProvider implements BankDataProvider
         return $this->institutions;
     }
 
-    public function createRequisition(string $institutionId, string $reference): array
+    public function createConsent(string $institutionId, string $reference): BankConsent
     {
-        return ['id' => 'req_'.$institutionId, 'link' => 'https://example.test/link', 'institution_id' => $institutionId];
+        return new BankConsent(
+            id: 'consent_'.$institutionId,
+            linked: false,
+            status: 'CR',
+            link: 'https://example.test/link',
+        );
     }
 
-    public function deleteRequisition(string $requisitionId): void {}
-
-    public function getRequisition(string $requisitionId): array
+    public function completeConsent(array $callback, ?string $consentId): BankConsent
     {
-        return $this->requisitions[$requisitionId] ?? ['status' => 'LN', 'accounts' => []];
+        return $this->getConsent((string) $consentId);
+    }
+
+    public function getConsent(string $consentId): BankConsent
+    {
+        $data = $this->consents[$consentId] ?? ['status' => 'LN', 'accounts' => []];
+        $status = (string) ($data['status'] ?? 'LN');
+
+        return new BankConsent(
+            id: $consentId,
+            linked: $status === 'LN',
+            status: $status,
+            accountIds: array_values($data['accounts'] ?? []),
+        );
+    }
+
+    public function deleteConsent(string $consentId): void {}
+
+    public function callbackReference(array $callback): ?string
+    {
+        return isset($callback['ref'])
+            ? (string) $callback['ref']
+            : (isset($callback['state']) ? (string) $callback['state'] : null);
     }
 
     public function getAccountDetails(string $accountId): array

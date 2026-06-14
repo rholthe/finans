@@ -20,6 +20,8 @@ use RuntimeException;
  */
 class GoCardlessProvider implements BankDataProvider
 {
+    public const KEY = 'gocardless';
+
     private const ACCESS_TOKEN_KEY = 'gocardless_access_token';
 
     private const REFRESH_TOKEN_KEY = 'gocardless_refresh_token';
@@ -47,24 +49,51 @@ class GoCardlessProvider implements BankDataProvider
         return $this->request('GET', '/institutions/', ['country' => strtolower($country)])->json();
     }
 
-    public function createRequisition(string $institutionId, string $reference): array
+    public function createConsent(string $institutionId, string $reference): BankConsent
     {
-        return $this->request('POST', '/requisitions/', [
+        $requisition = $this->request('POST', '/requisitions/', [
             'redirect' => config('gocardless.redirect_uri'),
             'institution_id' => $institutionId,
             'reference' => $reference,
             'user_language' => 'NO',
         ])->json();
+
+        return new BankConsent(
+            id: (string) ($requisition['id'] ?? ''),
+            linked: false,
+            status: (string) ($requisition['status'] ?? 'CR'),
+            link: $requisition['link'] ?? null,
+        );
     }
 
-    public function deleteRequisition(string $requisitionId): void
+    public function completeConsent(array $callback, ?string $consentId): BankConsent
     {
-        $this->request('DELETE', "/requisitions/{$requisitionId}/");
+        // GoCardless tildeler requisition-id-en ved opprettelse, så vi henter
+        // bare gjeldende status og kontoer.
+        return $this->getConsent((string) $consentId);
     }
 
-    public function getRequisition(string $requisitionId): array
+    public function getConsent(string $consentId): BankConsent
     {
-        return $this->request('GET', "/requisitions/{$requisitionId}/")->json();
+        $requisition = $this->request('GET', "/requisitions/{$consentId}/")->json();
+        $status = (string) ($requisition['status'] ?? '—');
+
+        return new BankConsent(
+            id: $consentId,
+            linked: $status === 'LN',
+            status: $status,
+            accountIds: array_values($requisition['accounts'] ?? []),
+        );
+    }
+
+    public function deleteConsent(string $consentId): void
+    {
+        $this->request('DELETE', "/requisitions/{$consentId}/");
+    }
+
+    public function callbackReference(array $callback): ?string
+    {
+        return isset($callback['ref']) ? (string) $callback['ref'] : null;
     }
 
     public function getAccountDetails(string $accountId): array

@@ -28,7 +28,7 @@ class BankSyncService
     private bool $hasErrors = false;
 
     public function __construct(
-        private readonly BankDataProvider $provider,
+        private readonly BankProviderRegistry $providers,
         private readonly RuleEngine $rules,
     ) {}
 
@@ -118,8 +118,10 @@ class BankSyncService
     {
         $this->line('header', __('Bank: :name', ['name' => $connection->name]));
 
+        $provider = $this->providers->get($connection->provider);
+
         try {
-            $requisition = $this->provider->getRequisition($connection->requisition_id);
+            $consent = $provider->getConsent($connection->consent_id);
         } catch (Throwable $e) {
             $this->line('error', __('Kunne ikke hente bankstatus: :error', ['error' => $e->getMessage()]));
             $this->hasErrors = true;
@@ -127,11 +129,11 @@ class BankSyncService
             return;
         }
 
-        $connection->update(['status' => $requisition['status'] ?? $connection->status]);
+        $connection->update(['status' => $consent->status]);
 
-        if (($requisition['status'] ?? null) !== 'LN') {
+        if (! $consent->linked) {
             $this->line('warn', __('Hopper over: tilkoblingen er ikke linket (status: :status).', [
-                'status' => $requisition['status'] ?? '—',
+                'status' => $consent->status,
             ]));
             $this->hasErrors = true;
 
@@ -139,14 +141,14 @@ class BankSyncService
         }
 
         foreach ($connection->bankAccounts as $bankAccount) {
-            $this->syncAccount($connection, $bankAccount, $dateFrom, $seen);
+            $this->syncAccount($provider, $connection, $bankAccount, $dateFrom, $seen);
         }
     }
 
     /**
      * @param  array<string, int>  $seen
      */
-    private function syncAccount(BankConnection $connection, BankAccount $bankAccount, string $dateFrom, array &$seen): void
+    private function syncAccount(BankDataProvider $provider, BankConnection $connection, BankAccount $bankAccount, string $dateFrom, array &$seen): void
     {
         if ($bankAccount->account_id === null) {
             $this->line('info', __('Hopper over konto :iban: ikke koblet til en budsjettkonto.', ['iban' => $bankAccount->iban ?? $bankAccount->external_id]));
@@ -168,7 +170,7 @@ class BankSyncService
         }
 
         try {
-            $transactions = $this->provider->getTransactions($bankAccount->external_id, $connection->institution_id, $dateFrom);
+            $transactions = $provider->getTransactions($bankAccount->external_id, $connection->institution_id, $dateFrom);
         } catch (Throwable $e) {
             $this->line('error', __('Kunne ikke hente transaksjoner: :error', ['error' => $e->getMessage()]));
             $this->hasErrors = true;
@@ -176,7 +178,7 @@ class BankSyncService
             return;
         }
 
-        $this->storeRateLimit($bankAccount);
+        $this->storeRateLimit($provider, $bankAccount);
 
         $newCount = 0;
         foreach ($transactions as $transaction) {
@@ -214,9 +216,9 @@ class BankSyncService
         );
     }
 
-    private function storeRateLimit(BankAccount $bankAccount): void
+    private function storeRateLimit(BankDataProvider $provider, BankAccount $bankAccount): void
     {
-        $rateLimit = $this->provider->lastRateLimit();
+        $rateLimit = $provider->lastRateLimit();
 
         if ($rateLimit === null) {
             return;

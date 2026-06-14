@@ -4,6 +4,7 @@ import type {
     Account,
     AccountType,
     BankConnection,
+    BankProvider,
     BudgetMonth,
     Category,
     CategoryActivity,
@@ -12,10 +13,14 @@ import type {
     Goal,
     GoalType,
     Institution,
+    CategoryTrendReport,
+    IncomeExpenseReport,
+    NetWorthReport,
     Paginated,
     ReconcileResult,
     Rule,
     RuleApplies,
+    SpendingReport,
     ScheduledTransaction,
     ScheduleFrequency,
     SyncResult,
@@ -266,6 +271,38 @@ export async function moveBudget(
     return res.data;
 }
 
+// --- Rapporter ---
+
+export interface ReportPeriod {
+    from: string; // YYYY-MM
+    to: string; // YYYY-MM
+}
+
+export async function getSpendingReport(period: ReportPeriod): Promise<SpendingReport> {
+    const res = await api.get<SpendingReport>('/reports/spending', { params: period });
+    return res.data;
+}
+
+export async function getIncomeExpenseReport(period: ReportPeriod): Promise<IncomeExpenseReport> {
+    const res = await api.get<IncomeExpenseReport>('/reports/income-expense', { params: period });
+    return res.data;
+}
+
+export async function getCategoryTrendReport(
+    categoryId: number,
+    period: ReportPeriod,
+): Promise<CategoryTrendReport> {
+    const res = await api.get<CategoryTrendReport>('/reports/category-trend', {
+        params: { category_id: categoryId, ...period },
+    });
+    return res.data;
+}
+
+export async function getNetWorthReport(period: ReportPeriod): Promise<NetWorthReport> {
+    const res = await api.get<NetWorthReport>('/reports/net-worth', { params: period });
+    return res.data;
+}
+
 // --- Mål ---
 
 export interface GoalInput {
@@ -326,8 +363,10 @@ export async function deleteScheduledTransaction(id: number): Promise<void> {
 
 // --- Bankintegrasjon ---
 
-export async function listInstitutions(): Promise<Institution[]> {
-    const res = await api.get<Institution[]>('/bank/institutions');
+export async function listInstitutions(
+    provider: BankProvider = 'gocardless',
+): Promise<Institution[]> {
+    const res = await api.get<Institution[]>('/bank/institutions', { params: { provider } });
     return res.data;
 }
 
@@ -337,8 +376,14 @@ export async function listBankConnections(): Promise<BankConnection[]> {
 }
 
 /** Returnerer samtykke-lenken brukeren skal sendes til (window.location). */
-export async function connectBank(institutionId: string): Promise<string> {
-    const res = await api.post<{ link: string }>('/bank/connect', { institution_id: institutionId });
+export async function connectBank(
+    provider: BankProvider,
+    institutionId: string,
+): Promise<string> {
+    const res = await api.post<{ link: string }>('/bank/connect', {
+        provider,
+        institution_id: institutionId,
+    });
     return res.data.link;
 }
 

@@ -8,7 +8,10 @@ import Regler from '@/pages/Regler';
 import Innstillinger from '@/pages/Innstillinger';
 import Accounts from '@/pages/Accounts';
 import AccountDetail from '@/pages/AccountDetail';
-import type { ReactNode } from 'react';
+import { lazy, Suspense, type ReactNode } from 'react';
+
+// Rapporter drar inn recharts; lastes først når siden besøkes (code-splitting).
+const Rapporter = lazy(() => import('@/pages/Rapporter'));
 
 function RequireAuth({ children }: { children: ReactNode }) {
     const { authenticated, loading } = useAuth();
@@ -37,6 +40,16 @@ export default function App() {
                     <Route path="/" element={<RequireAuth><Budget /></RequireAuth>} />
                     <Route path="/planlagte" element={<RequireAuth><Planlagte /></RequireAuth>} />
                     <Route path="/kontoer" element={<RequireAuth><Accounts /></RequireAuth>} />
+                    <Route
+                        path="/rapporter"
+                        element={
+                            <RequireAuth>
+                                <Suspense fallback={<div className="p-8 text-neutral-400">Laster …</div>}>
+                                    <Rapporter />
+                                </Suspense>
+                            </RequireAuth>
+                        }
+                    />
                     <Route path="/bank" element={<RequireAuth><Bank /></RequireAuth>} />
                     <Route path="/regler" element={<RequireAuth><Regler /></RequireAuth>} />
                     <Route path="/innstillinger" element={<RequireAuth><Innstillinger /></RequireAuth>} />

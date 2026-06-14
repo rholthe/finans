@@ -8,6 +8,7 @@ use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CategoryGroupController;
 use App\Http\Controllers\GoalController;
 use App\Http\Controllers\ReconciliationController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RuleController;
 use App\Http\Controllers\ScheduledTransactionController;
 use App\Http\Controllers\SettingsController;
@@ -77,6 +78,12 @@ Route::prefix('api')->group(function () {
         Route::delete('bank/connections/{bankConnection}', [BankController::class, 'deleteConnection']);
         Route::post('bank/sync', [BankController::class, 'sync']);
         Route::get('bank/sync-status/{syncEvent}', [BankController::class, 'syncStatus']);
+
+        // Rapporter (aggregeringer fra transactions)
+        Route::get('reports/spending', [ReportController::class, 'spending']);
+        Route::get('reports/income-expense', [ReportController::class, 'incomeExpense']);
+        Route::get('reports/category-trend', [ReportController::class, 'categoryTrend']);
+        Route::get('reports/net-worth', [ReportController::class, 'netWorth']);
 
         Route::get('settings', [SettingsController::class, 'show']);
         Route::put('settings', [SettingsController::class, 'update']);

@@ -158,6 +158,39 @@ export interface CategoryActivity {
     scheduled: CategoryActivityScheduled[];
 }
 
+// --- Rapporter ---
+
+export interface SpendingReport {
+    from: string;
+    to: string;
+    total: number;
+    groups: {
+        id: number;
+        name: string;
+        total: number;
+        categories: { id: number; name: string; total: number }[];
+    }[];
+}
+
+export interface IncomeExpenseReport {
+    from: string;
+    to: string;
+    months: { month: string; income: number; expense: number; net: number }[];
+}
+
+export interface CategoryTrendReport {
+    category: { id: number; name: string };
+    from: string;
+    to: string;
+    months: { month: string; total: number }[];
+}
+
+export interface NetWorthReport {
+    from: string;
+    to: string;
+    months: { month: string; assets: number; debt: number; net: number }[];
+}
+
 export type ScheduleFrequency =
     | 'weekly'
     | 'biweekly'
@@ -196,6 +229,13 @@ export const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
     loan: 'Lån',
 };
 
+export type BankProvider = 'gocardless' | 'enablebanking';
+
+export const BANK_PROVIDER_LABELS: Record<BankProvider, string> = {
+    gocardless: 'GoCardless',
+    enablebanking: 'Enable Banking',
+};
+
 export interface Institution {
     id: string;
     name: string;
@@ -215,9 +255,10 @@ export interface BankAccountLink {
 
 export interface BankConnection {
     id: number;
+    provider: BankProvider;
     name: string;
     institution_id: string;
-    status: string; // GoCardless requisition-status (LN = linket)
+    status: string; // rå leverandørstatus (GoCardless: LN = linket)
     accounts: BankAccountLink[];
 }
 

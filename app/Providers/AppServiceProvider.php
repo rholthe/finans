@@ -13,7 +13,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        // Bankleverandør bak abstraksjon: bytt klasse her for ny aggregator.
+        // Bankleverandør velges per tilkobling via BankProviderRegistry. Et
+        // standardbind beholdes for kode som måtte be om grensesnittet direkte;
+        // nye leverandører legges til i registeret, ikke her.
         $this->app->bind(BankDataProvider::class, GoCardlessProvider::class);
     }
 

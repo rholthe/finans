@@ -6,7 +6,7 @@ use App\Jobs\SyncBankTransactionsJob;
 use App\Models\Account;
 use App\Models\BankConnection;
 use App\Models\SyncEvent;
-use App\Services\Bank\BankDataProvider;
+use App\Services\Bank\GoCardlessProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Queue;
@@ -29,7 +29,7 @@ class BankConnectionTest extends TestCase
         $this->provider->institutions = [
             ['id' => 'SANDBOXFINANCE_SFIN0000', 'name' => 'Sandbox Finance'],
         ];
-        $this->app->instance(BankDataProvider::class, $this->provider);
+        $this->app->instance(GoCardlessProvider::class, $this->provider);
     }
 
     public function test_connect_returnerer_lenke_og_lagrer_referanse(): void
@@ -43,13 +43,14 @@ class BankConnectionTest extends TestCase
 
     public function test_callback_lagrer_bank_og_kontoer(): void
     {
-        $this->provider->requisitions['req-x'] = ['status' => 'LN', 'accounts' => ['acc-a', 'acc-b']];
+        $this->provider->consents['req-x'] = ['status' => 'LN', 'accounts' => ['acc-a', 'acc-b']];
         $this->provider->accountDetails['acc-a'] = ['id' => 'acc-a', 'status' => 'READY', 'iban' => 'NO111'];
         $this->provider->accountDetails['acc-b'] = ['id' => 'acc-b', 'status' => 'READY', 'iban' => 'NO222'];
 
         $this->withSession([
             'bank_ref' => 'token123',
-            'bank_requisition_id' => 'req-x',
+            'bank_provider' => 'gocardless',
+            'bank_consent_id' => 'req-x',
             'bank_institution_id' => 'SANDBOXFINANCE_SFIN0000',
         ])->get('/api/bank/callback?ref=token123')
             ->assertRedirect('/bank?status=connected');
@@ -63,7 +64,8 @@ class BankConnectionTest extends TestCase
     {
         $this->withSession([
             'bank_ref' => 'token123',
-            'bank_requisition_id' => 'req-x',
+            'bank_provider' => 'gocardless',
+            'bank_consent_id' => 'req-x',
             'bank_institution_id' => 'SANDBOXFINANCE_SFIN0000',
         ])->get('/api/bank/callback?ref=feil')
             ->assertRedirect('/bank?status=error&reason=token');
@@ -75,7 +77,7 @@ class BankConnectionTest extends TestCase
     {
         $account = Account::factory()->create();
         $connection = BankConnection::create([
-            'institution_id' => 'SANDBOXFINANCE_SFIN0000', 'name' => 'Sandbox', 'requisition_id' => 'r', 'status' => 'LN',
+            'institution_id' => 'SANDBOXFINANCE_SFIN0000', 'name' => 'Sandbox', 'consent_id' => 'r', 'status' => 'LN',
         ]);
         $bankAccount = $connection->bankAccounts()->create(['external_id' => 'acc-a']);
 
@@ -89,7 +91,7 @@ class BankConnectionTest extends TestCase
     public function test_sletter_tilkobling(): void
     {
         $connection = BankConnection::create([
-            'institution_id' => 'SANDBOXFINANCE_SFIN0000', 'name' => 'Sandbox', 'requisition_id' => 'r', 'status' => 'LN',
+            'institution_id' => 'SANDBOXFINANCE_SFIN0000', 'name' => 'Sandbox', 'consent_id' => 'r', 'status' => 'LN',
         ]);
         $connection->bankAccounts()->create(['external_id' => 'acc-a']);
 
@@ -129,7 +131,7 @@ class BankConnectionTest extends TestCase
     public function test_connections_viser_rate_limit(): void
     {
         $connection = BankConnection::create([
-            'institution_id' => 'SANDBOXFINANCE_SFIN0000', 'name' => 'Sandbox', 'requisition_id' => 'r', 'status' => 'LN',
+            'institution_id' => 'SANDBOXFINANCE_SFIN0000', 'name' => 'Sandbox', 'consent_id' => 'r', 'status' => 'LN',
         ]);
         $connection->bankAccounts()->create([
             'external_id' => 'acc-a',

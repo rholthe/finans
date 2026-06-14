@@ -8,6 +8,18 @@ export function formatNok(amount: number): string {
     return nok.format(amount);
 }
 
+/** Kompakt beløp for akse-etiketter, f.eks. «12 k» / «1,5 mill». */
+export function formatNokShort(amount: number): string {
+    const abs = Math.abs(amount);
+    if (abs >= 1_000_000) {
+        return `${(amount / 1_000_000).toLocaleString('nb-NO', { maximumFractionDigits: 1 })} mill`;
+    }
+    if (abs >= 1_000) {
+        return `${Math.round(amount / 1_000)} k`;
+    }
+    return String(Math.round(amount));
+}
+
 export function formatDate(iso: string): string {
     return new Date(iso).toLocaleDateString('nb-NO', {
         day: '2-digit',
