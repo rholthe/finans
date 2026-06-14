@@ -143,8 +143,10 @@ class EnableBankingProvider implements BankDataProvider
     {
         $status = (string) ($session['status'] ?? 'AUTHORIZED');
 
+        // `accounts` kan være enten objekter (POST /sessions) eller bare uid-
+        // strenger (GET /sessions/{id}), avhengig av endepunkt.
         $accountIds = array_values(array_map(
-            fn (array $a): string => (string) ($a['uid'] ?? $a['account_id'] ?? ''),
+            fn ($a): string => is_array($a) ? (string) ($a['uid'] ?? $a['account_id'] ?? '') : (string) $a,
             $session['accounts'] ?? [],
         ));
 

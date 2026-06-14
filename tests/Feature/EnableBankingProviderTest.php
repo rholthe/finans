@@ -73,6 +73,22 @@ class EnableBankingProviderTest extends TestCase
         $this->assertSame(['acc-1', 'acc-2'], $consent->accountIds);
     }
 
+    public function test_get_consent_taaler_kontoer_som_uid_strenger(): void
+    {
+        // GET /sessions/{id} returnerer accounts som rene uid-strenger, ikke objekter.
+        Http::fake([
+            'eb.test/sessions/sess-9' => Http::response([
+                'status' => 'AUTHORIZED',
+                'accounts' => ['acc-1', 'acc-2'],
+            ]),
+        ]);
+
+        $consent = (new EnableBankingProvider)->getConsent('sess-9');
+
+        $this->assertTrue($consent->linked);
+        $this->assertSame(['acc-1', 'acc-2'], $consent->accountIds);
+    }
+
     public function test_transaksjoner_normaliseres_med_fortegn_fra_indikator(): void
     {
         Http::fake([
