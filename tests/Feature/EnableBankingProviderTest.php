@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Services\Bank\BankRateLimitException;
 use App\Services\Bank\EnableBankingProvider;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -111,6 +112,47 @@ class EnableBankingProviderTest extends TestCase
         $this->assertSame(-250.5, $result[0]->amount); // DBIT → negativt
         $this->assertSame('2026-01-10', $result[0]->date);
         $this->assertStringContainsString('REMA 1000', $result[0]->payee);
+    }
+
+    public function test_reservert_transaksjon_markeres_ikke_bokfoert(): void
+    {
+        Http::fake([
+            'eb.test/accounts/acc-1/transactions*' => Http::response(['transactions' => [
+                ['entry_reference' => 'b-1', 'booking_date' => '2026-01-10', 'transaction_amount' => ['amount' => '100', 'currency' => 'NOK'], 'credit_debit_indicator' => 'CRDT', 'status' => 'BOOK'],
+                ['entry_reference' => 'p-1', 'booking_date' => '2026-01-10', 'transaction_amount' => ['amount' => '50', 'currency' => 'NOK'], 'credit_debit_indicator' => 'DBIT', 'status' => 'PEND'],
+            ]]),
+        ]);
+
+        $result = (new EnableBankingProvider)->getTransactions('acc-1', 'DNB', '2026-01-01');
+
+        $this->assertTrue($result[0]->booked);
+        $this->assertFalse($result[1]->booked);
+    }
+
+    public function test_429_kaster_rate_limit_exception(): void
+    {
+        Http::fake([
+            'eb.test/accounts/acc-1/transactions*' => Http::response(['error' => 'too many'], 429),
+        ]);
+
+        $this->expectException(BankRateLimitException::class);
+
+        (new EnableBankingProvider)->getTransactions('acc-1', 'DNB', '2026-01-01');
+    }
+
+    public function test_429_leser_retry_after_i_sekunder(): void
+    {
+        Http::fake([
+            'eb.test/accounts/acc-1/transactions*' => Http::response(['error' => 'too many'], 429, ['Retry-After' => '120']),
+        ]);
+
+        try {
+            (new EnableBankingProvider)->getTransactions('acc-1', 'DNB', '2026-01-01');
+            $this->fail('Forventet BankRateLimitException.');
+        } catch (BankRateLimitException $e) {
+            $this->assertNotNull($e->retryAt);
+            $this->assertEqualsWithDelta(120, now()->diffInSeconds($e->retryAt, false), 5);
+        }
     }
 
     public function test_callback_referanse_leses_fra_state(): void

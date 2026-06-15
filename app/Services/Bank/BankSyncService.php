@@ -171,6 +171,22 @@ class BankSyncService
 
         try {
             $transactions = $provider->getTransactions($bankAccount->external_id, $connection->institution_id, $dateFrom);
+        } catch (BankRateLimitException $e) {
+            // 429: marker kontoen ikke-synkbar (gjenbruker rate-limit-gatingen)
+            // fram til Retry-After, ellers et døgn fram (EB har døgnkvote).
+            $resetAt = $e->retryAt ?? now()->addDay();
+            $bankAccount->update([
+                'rate_limit' => null,
+                'rate_limit_remaining' => 0,
+                'rate_limit_reset_at' => $resetAt,
+            ]);
+            $this->line('warn', __('Rate-limit (429) for konto :iban – hopper over til :reset.', [
+                'iban' => $bankAccount->iban ?? $bankAccount->external_id,
+                'reset' => $resetAt->toDateTimeString(),
+            ]));
+            $this->hasErrors = true;
+
+            return;
         } catch (Throwable $e) {
             $this->line('error', __('Kunne ikke hente transaksjoner: :error', ['error' => $e->getMessage()]));
             $this->hasErrors = true;

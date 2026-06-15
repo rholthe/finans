@@ -243,7 +243,35 @@ class EnableBankingProvider implements BankDataProvider
             default => $request->get($endpoint, $data),
         };
 
+        // Enable Banking eksponerer ingen rate-limit-headere – kun 429 ved
+        // overskridelse. Oversett til en typet exception synken kan bakke av på.
+        if ($response->status() === 429) {
+            throw new BankRateLimitException($this->retryAtFrom($response));
+        }
+
         return $response->throw();
+    }
+
+    /**
+     * Tolk Retry-After fra et 429-svar: sekunder eller en HTTP-dato. Enable
+     * Banking oppgir den sjelden, så null (= leverandørens standard-backoff)
+     * er det vanlige.
+     */
+    private function retryAtFrom(Response $response): ?CarbonImmutable
+    {
+        $retryAfter = $response->header('Retry-After');
+
+        if ($retryAfter === null || $retryAfter === '') {
+            return null;
+        }
+
+        try {
+            return is_numeric($retryAfter)
+                ? CarbonImmutable::now()->addSeconds((int) $retryAfter)
+                : CarbonImmutable::parse($retryAfter);
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**

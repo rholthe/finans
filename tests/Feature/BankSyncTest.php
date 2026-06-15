@@ -238,6 +238,56 @@ class BankSyncTest extends TestCase
         $this->assertDatabaseHas('transactions', ['external_id' => 'pend-locked', 'pending' => true]);
     }
 
+    public function test_rate_limit_429_markerer_konto_ikke_synkbar(): void
+    {
+        $bankAccount = $this->linkedAccount();
+        $this->provider->rateLimited['acc1'] = null; // 429 uten Retry-After
+        $this->provider->transactions['acc1'] = [$this->tx('tx-1', -300)];
+
+        $event = $this->sync();
+
+        $this->assertSame(SyncEvent::STATUS_WITH_ERRORS, $event->status);
+        $this->assertSame(0, $event->imported_count);
+        $this->assertDatabaseCount('transactions', 0);
+
+        $bankAccount->refresh();
+        $this->assertSame(0, $bankAccount->rate_limit_remaining);
+        $this->assertTrue($bankAccount->rate_limit_reset_at->isFuture());
+        $this->assertFalse($bankAccount->isSyncable());
+    }
+
+    public function test_rate_limit_429_respekterer_retry_after(): void
+    {
+        $bankAccount = $this->linkedAccount();
+        $retryAt = now()->addMinutes(15)->startOfSecond();
+        $this->provider->rateLimited['acc1'] = $retryAt->toImmutable();
+
+        $this->sync();
+
+        $bankAccount->refresh();
+        $this->assertEquals(
+            $retryAt->toDateTimeString(),
+            $bankAccount->rate_limit_reset_at->toDateTimeString(),
+        );
+    }
+
+    public function test_rate_limited_konto_hoppes_over_paa_neste_synk(): void
+    {
+        $bankAccount = $this->linkedAccount();
+        // Kontoen er allerede rate-limited fra en tidligere synk.
+        $bankAccount->update([
+            'rate_limit_remaining' => 0,
+            'rate_limit_reset_at' => now()->addHour(),
+        ]);
+        $this->provider->transactions['acc1'] = [$this->tx('tx-1', -300)];
+
+        $event = $this->sync();
+
+        // Hoppet over av isSyncable()-gatingen før noe API-kall – ingen import.
+        $this->assertSame(SyncEvent::STATUS_WITH_ERRORS, $event->status);
+        $this->assertDatabaseCount('transactions', 0);
+    }
+
     public function test_hopper_over_konto_uten_kobling(): void
     {
         $connection = BankConnection::create([
