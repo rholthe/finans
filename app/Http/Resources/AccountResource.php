@@ -35,6 +35,11 @@ class AccountResource extends JsonResource
             'balance' => round((float) $balance, 2),
             'cleared_balance' => round((float) $clearedBalance, 2),
             'last_reconciled_at' => $this->reconciliations()->max('reconciled_at'),
+            // Antall transaksjoner som mangler aktiv kategorisering (badge/varsling).
+            'uncategorized_count' => $this->needs_categorization_count
+                ?? $this->transactions()->needsCategorization()->count(),
+            // Koblet til banksynk? (Overføringsregler kan kun peke på ikke-synkede.)
+            'bank_synced' => (bool) ($this->bank_accounts_exists ?? $this->bankAccounts()->exists()),
         ];
     }
 }

@@ -19,7 +19,9 @@ class ScheduledTransactionResource extends JsonResource
         return [
             'id' => $this->id,
             'account_id' => $this->account_id,
+            'transfer_account_id' => $this->transfer_account_id,
             'category_id' => $this->category_id,
+            'rta' => $this->rta,
             'amount' => round((float) $this->amount, 2),
             'payee' => $this->payee,
             'memo' => $this->memo,

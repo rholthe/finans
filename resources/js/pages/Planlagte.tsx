@@ -179,7 +179,13 @@ export default function Planlagte() {
                         <tbody className="divide-y divide-neutral-100">
                             {filtered.map((item) => (
                                 <tr key={item.id} className="hover:bg-neutral-50">
-                                    <td className="px-4 py-2">{item.payee ?? '—'}</td>
+                                    <td className="px-4 py-2">
+                                        {item.transfer_account_id ? (
+                                            <span className="italic text-neutral-500">⇄ Overføring</span>
+                                        ) : (
+                                            item.payee ?? '—'
+                                        )}
+                                    </td>
                                     <td className="px-4 py-2 text-neutral-600">
                                         {FREQUENCY_LABELS[item.frequency]}
                                     </td>
@@ -188,6 +194,8 @@ export default function Planlagte() {
                                     </td>
                                     <td className="px-4 py-2 text-neutral-600">
                                         {accountName.get(item.account_id) ?? '—'}
+                                        {item.transfer_account_id &&
+                                            ` → ${accountName.get(item.transfer_account_id) ?? '—'}`}
                                     </td>
                                     <td className="px-4 py-2 text-neutral-500">
                                         {item.category_id ? categoryName.get(item.category_id) ?? '—' : '—'}
@@ -249,8 +257,13 @@ function ScheduledForm({
     onSaved: () => void;
     onCancel?: () => void;
 }) {
+    const [type, setType] = useState<'transaction' | 'transfer'>(
+        existing?.transfer_account_id ? 'transfer' : 'transaction',
+    );
     const [accountId, setAccountId] = useState(String(existing?.account_id ?? accounts[0]?.id ?? ''));
-    const [categoryId, setCategoryId] = useState(String(existing?.category_id ?? ''));
+    const [transferAccountId, setTransferAccountId] = useState(String(existing?.transfer_account_id ?? ''));
+    // 'rta' = Klar til å fordele, '' = ukategorisert, ellers kategori-id.
+    const [categoryId, setCategoryId] = useState(existing?.rta ? 'rta' : String(existing?.category_id ?? ''));
     const [direction, setDirection] = useState<'out' | 'in'>(
         existing && existing.amount > 0 ? 'in' : 'out',
     );
@@ -263,6 +276,12 @@ function ScheduledForm({
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    const isTransfer = type === 'transfer';
+    // Overføring ut av budsjettet til en overvåket konto krever kategori.
+    const fromAcc = accounts.find((a) => a.id === Number(accountId));
+    const toAcc = accounts.find((a) => a.id === Number(transferAccountId));
+    const needsCategory = isTransfer && !!fromAcc?.on_budget && !!toAcc && !toAcc.on_budget;
+
     async function submit(e: FormEvent) {
         e.preventDefault();
         const magnitude = Math.abs(Number(amount));
@@ -270,19 +289,41 @@ function ScheduledForm({
             setError('Oppgi et beløp.');
             return;
         }
+        if (isTransfer && !transferAccountId) {
+            setError('Velg en mottakerkonto.');
+            return;
+        }
+        if (needsCategory && !categoryId) {
+            setError('Overføring ut av budsjettet krever en kategori.');
+            return;
+        }
         setBusy(true);
         setError(null);
-        const payload: NewScheduledTransaction = {
-            account_id: Number(accountId),
-            category_id: categoryId ? Number(categoryId) : null,
-            amount: direction === 'out' ? -magnitude : magnitude,
-            payee: payee || null,
-            frequency,
-            start_date: startDate,
-            end_date: endDate || null,
-            // Ved redigering flytter vi neste forfall; startdatoen (ankeret) er uendret.
-            ...(existing ? { next_date: nextDate } : {}),
-        };
+        const payload: NewScheduledTransaction = isTransfer
+            ? {
+                  account_id: Number(accountId),
+                  transfer_account_id: Number(transferAccountId),
+                  category_id: needsCategory ? Number(categoryId) : null,
+                  amount: magnitude, // backend signerer fra fra-kontoens ståsted
+                  payee: null,
+                  frequency,
+                  start_date: startDate,
+                  end_date: endDate || null,
+                  ...(existing ? { next_date: nextDate } : {}),
+              }
+            : {
+                  account_id: Number(accountId),
+                  transfer_account_id: null,
+                  category_id: categoryId === 'rta' || !categoryId ? null : Number(categoryId),
+                  rta: categoryId === 'rta',
+                  amount: direction === 'out' ? -magnitude : magnitude,
+                  payee: payee || null,
+                  frequency,
+                  start_date: startDate,
+                  end_date: endDate || null,
+                  // Ved redigering flytter vi neste forfall; startdatoen (ankeret) er uendret.
+                  ...(existing ? { next_date: nextDate } : {}),
+              };
         try {
             if (existing) {
                 await updateScheduledTransaction(existing.id, payload);
@@ -302,19 +343,36 @@ function ScheduledForm({
             onSubmit={submit}
             className="mt-6 grid gap-4 rounded-xl border border-neutral-200 bg-white p-5 sm:grid-cols-2"
         >
-            <label className="text-sm font-medium text-neutral-700">
-                Mottaker / beskrivelse
-                <input
-                    value={payee}
-                    onChange={(e) => setPayee(e.target.value)}
-                    autoFocus
-                    placeholder="f.eks. Husleie"
-                    className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 focus:border-neutral-900 focus:outline-none"
-                />
-            </label>
+            <div className="flex gap-2 sm:col-span-2">
+                {(['transaction', 'transfer'] as const).map((t) => (
+                    <button
+                        key={t}
+                        type="button"
+                        onClick={() => setType(t)}
+                        className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+                            type === t ? 'bg-neutral-900 text-white' : 'text-neutral-600 hover:bg-neutral-100'
+                        }`}
+                    >
+                        {t === 'transaction' ? 'Transaksjon' : 'Overføring'}
+                    </button>
+                ))}
+            </div>
+
+            {!isTransfer && (
+                <label className="text-sm font-medium text-neutral-700">
+                    Mottaker / beskrivelse
+                    <input
+                        value={payee}
+                        onChange={(e) => setPayee(e.target.value)}
+                        autoFocus
+                        placeholder="f.eks. Husleie"
+                        className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 focus:border-neutral-900 focus:outline-none"
+                    />
+                </label>
+            )}
 
             <label className="text-sm font-medium text-neutral-700">
-                Konto
+                {isTransfer ? 'Fra konto' : 'Konto'}
                 <select
                     value={accountId}
                     onChange={(e) => setAccountId(e.target.value)}
@@ -328,46 +386,72 @@ function ScheduledForm({
                 </select>
             </label>
 
-            <label className="text-sm font-medium text-neutral-700">
-                Kategori
-                <select
-                    value={categoryId}
-                    onChange={(e) => setCategoryId(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 focus:border-neutral-900 focus:outline-none"
-                >
-                    <option value="">Ingen (inntekt / ufordelt)</option>
-                    {groups.map((group) => (
-                        <optgroup key={group.id} label={group.name}>
-                            {group.categories.map((category) => (
-                                <option key={category.id} value={category.id}>
-                                    {category.name}
+            {isTransfer && (
+                <label className="text-sm font-medium text-neutral-700">
+                    Til konto
+                    <select
+                        value={transferAccountId}
+                        onChange={(e) => setTransferAccountId(e.target.value)}
+                        className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 focus:border-neutral-900 focus:outline-none"
+                    >
+                        <option value="">Velg konto …</option>
+                        {accounts
+                            .filter((a) => a.id !== Number(accountId))
+                            .map((account) => (
+                                <option key={account.id} value={account.id}>
+                                    {account.name}
                                 </option>
                             ))}
-                        </optgroup>
-                    ))}
-                </select>
-            </label>
+                    </select>
+                </label>
+            )}
+
+            {(!isTransfer || needsCategory) && (
+                <label className="text-sm font-medium text-neutral-700">
+                    Kategori
+                    <select
+                        value={categoryId}
+                        onChange={(e) => setCategoryId(e.target.value)}
+                        className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 focus:border-neutral-900 focus:outline-none"
+                    >
+                        {!isTransfer && <option value="">Ukategorisert</option>}
+                        {!isTransfer && <option value="rta">Klar til å fordele (RTA)</option>}
+                        {isTransfer && <option value="">Velg kategori …</option>}
+                        {groups.map((group) => (
+                            <optgroup key={group.id} label={group.name}>
+                                {group.categories.map((category) => (
+                                    <option key={category.id} value={category.id}>
+                                        {category.name}
+                                    </option>
+                                ))}
+                            </optgroup>
+                        ))}
+                    </select>
+                </label>
+            )}
 
             <div className="flex gap-3">
-                <div className="text-sm font-medium text-neutral-700">
-                    Retning
-                    <div className="mt-1 flex overflow-hidden rounded-lg border border-neutral-300">
-                        <button
-                            type="button"
-                            onClick={() => setDirection('out')}
-                            className={`px-3 py-2 ${direction === 'out' ? 'bg-red-600 text-white' : 'bg-white'}`}
-                        >
-                            Ut
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setDirection('in')}
-                            className={`px-3 py-2 ${direction === 'in' ? 'bg-green-600 text-white' : 'bg-white'}`}
-                        >
-                            Inn
-                        </button>
+                {!isTransfer && (
+                    <div className="text-sm font-medium text-neutral-700">
+                        Retning
+                        <div className="mt-1 flex overflow-hidden rounded-lg border border-neutral-300">
+                            <button
+                                type="button"
+                                onClick={() => setDirection('out')}
+                                className={`px-3 py-2 ${direction === 'out' ? 'bg-red-600 text-white' : 'bg-white'}`}
+                            >
+                                Ut
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setDirection('in')}
+                                className={`px-3 py-2 ${direction === 'in' ? 'bg-green-600 text-white' : 'bg-white'}`}
+                            >
+                                Inn
+                            </button>
+                        </div>
                     </div>
-                </div>
+                )}
                 <label className="flex-1 text-sm font-medium text-neutral-700">
                     Beløp
                     <input

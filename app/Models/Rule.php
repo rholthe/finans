@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\RuleApplies;
+use App\Enums\RuleTarget;
 use Database\Factories\RuleFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -22,6 +23,7 @@ class Rule extends Model
      */
     protected $attributes = [
         'applies_to' => 'both',
+        'target_type' => 'category',
         'priority' => 0,
         'active' => true,
     ];
@@ -36,6 +38,8 @@ class Rule extends Model
         'set_payee',
         'set_memo',
         'category_id',
+        'target_type',
+        'transfer_account_id',
         'last_applied_at',
     ];
 
@@ -47,6 +51,7 @@ class Rule extends Model
         return [
             'active' => 'boolean',
             'applies_to' => RuleApplies::class,
+            'target_type' => RuleTarget::class,
             'last_applied_at' => 'datetime',
         ];
     }
@@ -57,6 +62,16 @@ class Rule extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
+    }
+
+    /**
+     * Mottakerkonto når regelen gjør om transaksjonen til en overføring.
+     *
+     * @return BelongsTo<Account, $this>
+     */
+    public function transferAccount(): BelongsTo
+    {
+        return $this->belongsTo(Account::class, 'transfer_account_id');
     }
 
     /**

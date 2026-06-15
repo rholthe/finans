@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Layout from '@/components/Layout';
 import { apiErrorMessage, createAccount, listAccounts, type NewAccount } from '@/lib/data';
 import { formatNok } from '@/lib/format';
@@ -68,6 +68,7 @@ export default function Accounts() {
 }
 
 function AccountGroup({ title, accounts }: { title: string; accounts: Account[] }) {
+    const navigate = useNavigate();
     if (accounts.length === 0) return null;
     const total = accounts.reduce((sum, a) => sum + a.balance, 0);
 
@@ -93,6 +94,21 @@ function AccountGroup({ title, accounts }: { title: string; accounts: Account[] 
                                 <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-500">
                                     {ACCOUNT_TYPE_LABELS[account.type]}
                                 </span>
+                                {account.uncategorized_count > 0 && (
+                                    <span
+                                        role="button"
+                                        tabIndex={0}
+                                        title="Ukategoriserte transaksjoner – klikk for å se dem"
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            navigate(`/accounts/${account.id}?uncategorized=1`);
+                                        }}
+                                        className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-200"
+                                    >
+                                        {account.uncategorized_count} ukategorisert
+                                    </span>
+                                )}
                             </span>
                             <span
                                 className={`font-medium tabular-nums ${

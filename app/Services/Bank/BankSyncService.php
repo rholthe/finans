@@ -2,12 +2,15 @@
 
 namespace App\Services\Bank;
 
+use App\Enums\RuleTarget;
 use App\Mail\SyncReportMail;
+use App\Models\Account;
 use App\Models\BankAccount;
 use App\Models\BankConnection;
 use App\Models\SyncEvent;
 use App\Models\Transaction;
 use App\Services\Rules\RuleEngine;
+use App\Services\Rules\RuleResult;
 use App\Support\AppSettings;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -246,9 +249,22 @@ class BankSyncService
     {
         $rule = $this->rules->apply($transaction->description, $transaction->amount);
 
+        // Overføringsregel: gjør den bokførte raden om til et overføringspar mot
+        // en (ikke-synket) konto. Reserverte konverteres ikke – de churner og
+        // konverteres når de bokføres.
+        if ($booked && $rule->target === RuleTarget::Transfer && $rule->transferAccountId !== null) {
+            $target = Account::find($rule->transferAccountId);
+            if ($target !== null) {
+                $this->createTransferFromBank($bankAccount, $transaction, $rule, $target);
+
+                return;
+            }
+        }
+
         Transaction::create([
             'account_id' => $bankAccount->account_id,
-            'category_id' => $rule->categoryId,
+            'category_id' => $rule->target === RuleTarget::Rta ? null : $rule->categoryId,
+            'rta' => $rule->target === RuleTarget::Rta,
             'external_id' => $transaction->externalId,
             'bank_description' => $transaction->description,
             'rule_id' => $rule->ruleId,
@@ -259,6 +275,51 @@ class BankSyncService
             'cleared' => $booked,
             'pending' => ! $booked,
         ]);
+    }
+
+    /**
+     * Materialiser en overføringsregel som to sammenkoblede ben. Bank-benet
+     * (på den synkede kontoen) beholder external_id/bank_description for dedup;
+     * motpart-benet opprettes på målkontoen. Kategori/RTA følger budsjett↔
+     * overvåket-reglene (samme som TransferService), anvendt på budsjett-benet.
+     */
+    private function createTransferFromBank(BankAccount $bankAccount, NormalizedTransaction $transaction, RuleResult $rule, Account $target): void
+    {
+        $bankAcc = $bankAccount->account;
+        $amount = $transaction->amount;
+        $bankIsFrom = $amount < 0; // negativt = penger ut av bankkontoen
+
+        $from = $bankIsFrom ? $bankAcc : $target;
+        $to = $bankIsFrom ? $target : $bankAcc;
+        $budgetOutflow = $from->on_budget && ! $to->on_budget;
+        $budgetInflow = ! $from->on_budget && $to->on_budget;
+
+        $bankLeg = $bankAcc->transactions()->create([
+            'external_id' => $transaction->externalId,
+            'bank_description' => $transaction->description,
+            'rule_id' => $rule->ruleId,
+            'date' => $transaction->date,
+            'amount' => $amount,
+            'payee' => $bankIsFrom ? "Overføring til {$target->name}" : "Overføring fra {$target->name}",
+            'memo' => $rule->memo,
+            'cleared' => true,
+            'locked' => true,
+            'category_id' => ($budgetOutflow && $bankIsFrom) ? $rule->categoryId : null,
+            'rta' => $budgetInflow && ! $bankIsFrom,
+        ]);
+
+        $oppositeLeg = $target->transactions()->create([
+            'date' => $transaction->date,
+            'amount' => -$amount,
+            'payee' => $bankIsFrom ? "Overføring fra {$bankAcc->name}" : "Overføring til {$bankAcc->name}",
+            'transfer_id' => $bankLeg->id,
+            'cleared' => true,
+            'locked' => true,
+            'category_id' => ($budgetOutflow && ! $bankIsFrom) ? $rule->categoryId : null,
+            'rta' => $budgetInflow && $bankIsFrom,
+        ]);
+
+        $bankLeg->update(['transfer_id' => $oppositeLeg->id]);
     }
 
     private function storeRateLimit(BankDataProvider $provider, BankAccount $bankAccount): void

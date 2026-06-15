@@ -177,6 +177,22 @@ export default function Budget() {
                 />
             )}
 
+            {budget && budget.prior_uncategorized > 0 && (
+                <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    <span>
+                        <span aria-hidden>⚠️</span> Du har {budget.prior_uncategorized} ukategorisert
+                        {budget.prior_uncategorized === 1 ? ' transaksjon' : 'e transaksjoner'} fra tidligere
+                        måneder. Kategoriser dem for å holde budsjettet rent.
+                    </span>
+                    <Link
+                        to="/kontoer"
+                        className="shrink-0 font-medium underline hover:text-amber-900"
+                    >
+                        Gå til kontoer
+                    </Link>
+                </div>
+            )}
+
             {hasCategories && (
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                     <span className="text-xs font-medium text-neutral-400">
@@ -217,21 +233,21 @@ export default function Budget() {
                 </div>
             ) : (
                 <>
-                    <div className="mt-6 rounded-xl border border-neutral-200 bg-white">
-                        <div
-                            className={`${ROW_GRID} sticky top-0 z-10 rounded-t-xl border-b border-neutral-200 bg-neutral-50 px-4 py-2 text-xs font-medium uppercase tracking-wide text-neutral-500`}
-                        >
-                            <TriCheckbox
-                                checked={allSelected}
-                                indeterminate={selected.size > 0 && !allSelected}
-                                onChange={toggleAll}
-                                ariaLabel="Velg alle kategorier"
-                            />
-                            <span>Kategori</span>
-                            <span className="text-right">Tildelt</span>
-                            <span className="text-right">Aktivitet</span>
-                            <span className="text-right">Tilgjengelig</span>
-                        </div>
+                    <div
+                        className={`${ROW_GRID} sticky top-0 z-10 mt-6 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-2 text-xs font-medium uppercase tracking-wide text-neutral-500`}
+                    >
+                        <TriCheckbox
+                            checked={allSelected}
+                            indeterminate={selected.size > 0 && !allSelected}
+                            onChange={toggleAll}
+                            ariaLabel="Velg alle kategorier"
+                        />
+                        <span>Kategori</span>
+                        <span className="text-right">Tildelt</span>
+                        <span className="text-right">Aktivitet</span>
+                        <span className="text-right">Tilgjengelig</span>
+                    </div>
+                    <div className="mt-3 space-y-3">
                         {budget.groups.map((group) => (
                             <Group
                                 key={group.id}
@@ -388,16 +404,16 @@ function Group({
     }
 
     return (
-        <div className="border-b border-neutral-100 last:border-0">
-            <div className="flex items-center gap-2 bg-neutral-50/60 px-4 py-2">
+        <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
+            <div className="flex items-center gap-2 border-b border-neutral-200 bg-neutral-100 px-4 py-2.5">
                 <TriCheckbox
                     checked={allSel}
                     indeterminate={selCount > 0 && !allSel}
                     onChange={() => onToggleGroup(group)}
                     ariaLabel={`Velg gruppen ${group.name}`}
                 />
-                <span className="flex-1 truncate text-sm font-semibold text-neutral-700">{group.name}</span>
-                <span className="text-sm font-medium tabular-nums text-neutral-500">
+                <span className="flex-1 truncate text-sm font-semibold text-neutral-800">{group.name}</span>
+                <span className="text-sm font-semibold tabular-nums text-neutral-600">
                     {formatNok(group.available)}
                 </span>
             </div>
@@ -485,7 +501,7 @@ function CategoryRow({
     }
 
     return (
-        <div className="border-b border-neutral-50 last:border-0">
+        <div className="border-b border-neutral-100 last:border-0">
             <div className={`${ROW_GRID} px-4 py-1.5 ${selected ? 'bg-neutral-50' : 'hover:bg-neutral-50'}`}>
                 <TriCheckbox checked={selected} onChange={onToggle} ariaLabel={`Velg ${category.name}`} />
                 <div className="min-w-0">

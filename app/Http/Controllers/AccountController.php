@@ -24,6 +24,8 @@ class AccountController extends Controller
                 ['transactions as cleared_transactions_sum_amount' => fn ($q) => $q->where('cleared', true)],
                 'amount',
             )
+            ->withCount(['transactions as needs_categorization_count' => fn ($q) => $q->needsCategorization()])
+            ->withExists('bankAccounts')
             ->orderBy('closed')
             ->orderBy('name')
             ->get();

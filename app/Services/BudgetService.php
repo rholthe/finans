@@ -28,7 +28,7 @@ class BudgetService
      * Full budsjettvisning for én måned: grupper → kategorier med
      * assigned/activity/available, samt Ready to Assign.
      *
-     * @return array{month: string, ready_to_assign: float, upcoming_income: float, projected_ready_to_assign: float, groups: list<array<string, mixed>>}
+     * @return array{month: string, ready_to_assign: float, upcoming_income: float, projected_ready_to_assign: float, prior_uncategorized: int, groups: list<array<string, mixed>>}
      */
     public function monthlyView(string $month): array
     {
@@ -90,6 +90,12 @@ class BudgetService
             'ready_to_assign' => $readyToAssign,
             'upcoming_income' => round($upcomingIncome, 2),
             'projected_ready_to_assign' => round($readyToAssign + $upcomingIncome, 2),
+            // Ukategoriserte transaksjoner datert før denne måneden – grunnlag for
+            // advarselen om at historikk bør ryddes (ingen sperre).
+            'prior_uncategorized' => Transaction::query()
+                ->needsCategorization()
+                ->where('date', '<', $start->toDateString())
+                ->count(),
             'groups' => $groups,
         ];
     }
@@ -106,26 +112,64 @@ class BudgetService
         $byCategory = [];
         $uncategorized = 0.0;
 
-        $schedules = ScheduledTransaction::query()
-            ->whereHas('account', fn ($q) => $q->where('on_budget', true))
-            ->get();
+        // Hent alle (også overføringer der budsjett-benet ligger på mottakerkontoen).
+        $schedules = ScheduledTransaction::with(['account', 'transferAccount'])->get();
 
         foreach ($schedules as $schedule) {
+            $impact = $this->scheduleBudgetImpact($schedule);
+            if ($impact === null) {
+                continue;
+            }
+
             $count = count($schedule->occurrencesBetween($start, $end));
             if ($count === 0) {
                 continue;
             }
 
-            $total = (float) $schedule->amount * $count;
+            [$categoryId, $perOccurrence] = $impact;
+            $total = $perOccurrence * $count;
 
-            if ($schedule->category_id) {
-                $byCategory[$schedule->category_id] = ($byCategory[$schedule->category_id] ?? 0) + $total;
+            if ($categoryId !== null) {
+                $byCategory[$categoryId] = ($byCategory[$categoryId] ?? 0) + $total;
             } else {
                 $uncategorized += $total;
             }
         }
 
         return [$byCategory, $uncategorized];
+    }
+
+    /**
+     * Budsjetteffekt per forekomst av en planlagt post, eller null hvis den ikke
+     * påvirker budsjettet. Returnerer [kategori-id|null (RTA), signert beløp].
+     *
+     * Overføringer følger samme budsjett↔overvåket-regler som TransferService:
+     * budsjett↔budsjett er nøytral, budsjett→overvåket er kategorisert forbruk
+     * (negativt), overvåket→budsjett er tilflyt til RTA (positivt).
+     *
+     * @return array{0: int|null, 1: float}|null
+     */
+    private function scheduleBudgetImpact(ScheduledTransaction $schedule): ?array
+    {
+        $amount = (float) $schedule->amount;
+
+        if (! $schedule->isTransfer()) {
+            return $schedule->account->on_budget ? [$schedule->category_id, $amount] : null;
+        }
+
+        $to = $schedule->transferAccount;
+        if ($to === null) {
+            return null;
+        }
+
+        $fromBudget = $schedule->account->on_budget;
+        $toBudget = $to->on_budget;
+
+        return match (true) {
+            $fromBudget && ! $toBudget => [$schedule->category_id, $amount], // ut: kategorisert (amount er negativt)
+            ! $fromBudget && $toBudget => [null, -$amount],                  // inn: tilflyt til RTA
+            default => null,                                                 // budsjett↔budsjett / overvåket↔overvåket
+        };
     }
 
     /**

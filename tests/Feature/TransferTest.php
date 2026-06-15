@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Account;
 use App\Models\Category;
+use App\Models\Transaction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
@@ -40,6 +41,9 @@ class TransferTest extends TestCase
         $this->assertSame($fromLeg->id, $toLeg->transfer_id);
         $this->assertSame('Overføring til Sparekonto', $fromLeg->payee);
         $this->assertSame('Overføring fra Brukskonto', $toLeg->payee);
+        // Overføringer kan aldri redigeres → begge ben er låst.
+        $this->assertTrue($fromLeg->locked);
+        $this->assertTrue($toLeg->locked);
     }
 
     public function test_overforing_til_egen_konto_avvises(): void
@@ -132,6 +136,71 @@ class TransferTest extends TestCase
 
         // Penger flyttes mellom to budsjettkontoer – RTA er uendret.
         $this->getJson('/api/budget?month=2026-01')->assertJsonPath('ready_to_assign', 5000);
+    }
+
+    public function test_budsjett_til_overvaket_krever_kategori(): void
+    {
+        $budget = Account::factory()->create(['on_budget' => true]);
+        $tracking = Account::factory()->tracking()->create();
+
+        $this->postJson('/api/transfers', [
+            'from_account_id' => $budget->id,
+            'to_account_id' => $tracking->id,
+            'amount' => 500,
+            'date' => '2026-01-10',
+        ])->assertStatus(422)->assertJsonValidationErrorFor('category_id');
+
+        $this->assertDatabaseCount('transactions', 0);
+    }
+
+    public function test_budsjett_til_overvaket_kategoriserer_budsjettbenet(): void
+    {
+        $sparing = Category::factory()->create();
+        $budget = Account::factory()->create(['on_budget' => true]);
+        $budget->transactions()->create(['date' => '2026-01-01', 'amount' => 5000, 'is_starting_balance' => true]);
+        $this->putJson("/api/budget/2026-01/categories/{$sparing->id}", ['assigned' => 1000]);
+        $tracking = Account::factory()->tracking()->create();
+
+        $this->postJson('/api/transfers', [
+            'from_account_id' => $budget->id,
+            'to_account_id' => $tracking->id,
+            'amount' => 500,
+            'date' => '2026-01-10',
+            'category_id' => $sparing->id,
+        ])->assertCreated();
+
+        $fromLeg = $budget->transactions()->where('amount', -500)->firstOrFail();
+        $toLeg = $tracking->transactions()->firstOrFail();
+
+        // Budsjett-benet er kategorisert forbruk; overvåket-benet er ukategorisert.
+        $this->assertSame($sparing->id, $fromLeg->category_id);
+        $this->assertFalse($fromLeg->rta);
+        $this->assertNull($toLeg->category_id);
+
+        // Forbruket trekker kategoriens available, ikke RTA (uendret 4000).
+        $this->getJson('/api/budget?month=2026-01')->assertJsonPath('ready_to_assign', 4000);
+        $this->assertSame(0, Transaction::query()->needsCategorization()->count());
+    }
+
+    public function test_overvaket_til_budsjett_legges_til_rta(): void
+    {
+        $budget = Account::factory()->create(['on_budget' => true]);
+        $tracking = Account::factory()->tracking()->create();
+
+        $this->postJson('/api/transfers', [
+            'from_account_id' => $tracking->id,
+            'to_account_id' => $budget->id,
+            'amount' => 500,
+            'date' => '2026-01-10',
+        ])->assertCreated();
+
+        $toLeg = $budget->transactions()->firstOrFail();
+        $this->assertTrue($toLeg->rta);
+        $this->assertNull($toLeg->category_id);
+
+        // Tilflyt til budsjettet øker RTA, og teller ikke som «mangler kategori».
+        $this->getJson('/api/budget?month=2026-01')->assertJsonPath('ready_to_assign', 500);
+        $this->assertSame(0, Transaction::query()->needsCategorization()->count());
     }
 
     public function test_overforing_betaler_ned_kredittkort(): void

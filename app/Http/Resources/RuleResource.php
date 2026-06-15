@@ -27,6 +27,8 @@ class RuleResource extends JsonResource
             'set_payee' => $this->set_payee,
             'set_memo' => $this->set_memo,
             'category_id' => $this->category_id,
+            'target_type' => $this->target_type->value,
+            'transfer_account_id' => $this->transfer_account_id,
             'last_applied_at' => $this->last_applied_at?->toIso8601String(),
         ];
     }

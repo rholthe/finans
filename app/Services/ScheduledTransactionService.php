@@ -14,6 +14,8 @@ use Illuminate\Support\Facades\DB;
  */
 class ScheduledTransactionService
 {
+    public function __construct(private readonly TransferService $transfers) {}
+
     /**
      * Poster alle forfalte forekomster t.o.m. $asOf (default i dag).
      *
@@ -47,18 +49,33 @@ class ScheduledTransactionService
                 break;
             }
 
-            $schedule->account->transactions()->create([
-                'scheduled_transaction_id' => $schedule->id,
-                'category_id' => $schedule->category_id,
-                'date' => $cursor->toDateString(),
-                'amount' => $schedule->amount,
-                'payee' => $schedule->payee,
-                'memo' => $schedule->memo,
-                'cleared' => false,
-                // Låst slik at regelmotoren aldri overskriver en planlagt postering
-                // (samme beskyttelse som manuelt redigerte transaksjoner).
-                'locked' => true,
-            ]);
+            if ($schedule->isTransfer()) {
+                // Planlagt overføring: materialiser begge ben via TransferService
+                // (samme budsjett↔overvåket-regler som manuelle overføringer).
+                $this->transfers->create(
+                    from: $schedule->account,
+                    to: $schedule->transferAccount,
+                    amount: (float) $schedule->amount,
+                    date: $cursor->toDateString(),
+                    memo: $schedule->memo,
+                    categoryId: $schedule->category_id,
+                    scheduledTransactionId: $schedule->id,
+                );
+            } else {
+                $schedule->account->transactions()->create([
+                    'scheduled_transaction_id' => $schedule->id,
+                    'category_id' => $schedule->category_id,
+                    'rta' => $schedule->rta,
+                    'date' => $cursor->toDateString(),
+                    'amount' => $schedule->amount,
+                    'payee' => $schedule->payee,
+                    'memo' => $schedule->memo,
+                    'cleared' => false,
+                    // Låst slik at regelmotoren aldri overskriver en planlagt postering
+                    // (samme beskyttelse som manuelt redigerte transaksjoner).
+                    'locked' => true,
+                ]);
+            }
 
             $schedule->last_posted_date = $cursor->toDateString();
             $cursor = $schedule->frequency->advance($cursor);

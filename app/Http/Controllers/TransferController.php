@@ -4,19 +4,26 @@ namespace App\Http\Controllers;
 
 use App\Http\Resources\TransactionResource;
 use App\Models\Account;
-use App\Models\Transaction;
+use App\Services\TransferService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class TransferController extends Controller
 {
+    public function __construct(private readonly TransferService $transfers) {}
+
     /**
-     * Opprett en overføring mellom to kontoer som to sammenkoblede, ukategoriserte
-     * transaksjoner (ett ben på hver konto). Overføringer påvirker ikke Ready to
-     * Assign – benene nuller hverandre ut – og en overføring inn på et kredittkort
-     * tømmer kortets betalingskategori (se BudgetService).
+     * Opprett en overføring mellom to kontoer som to sammenkoblede transaksjoner
+     * (ett ben på hver konto).
+     *
+     * Kategori avhenger av om benene krysser budsjettgrensen:
+     * - budsjett ↔ budsjett / overvåket ↔ overvåket: ingen kategori (RTA-nøytral).
+     * - budsjett → overvåket (penger ut av budsjettet): budsjett-benet er
+     *   kategorisert forbruk og krever en kategori.
+     * - overvåket → budsjett (penger inn): budsjett-benet er tilflyt og legges
+     *   til RTA (rta=true).
      */
     public function store(Request $request): JsonResponse
     {
@@ -26,32 +33,27 @@ class TransferController extends Controller
             'amount' => ['required', 'numeric', 'gt:0'],
             'date' => ['required', 'date'],
             'memo' => ['nullable', 'string'],
+            'category_id' => ['nullable', Rule::exists('categories', 'id')],
         ]);
 
         $from = Account::findOrFail($validated['from_account_id']);
         $to = Account::findOrFail($validated['to_account_id']);
         $amount = (float) $validated['amount'];
 
-        $fromLeg = DB::transaction(function () use ($from, $to, $amount, $validated): Transaction {
-            $fromLeg = $from->transactions()->create([
-                'date' => $validated['date'],
-                'amount' => -$amount,
-                'payee' => "Overføring til {$to->name}",
-                'memo' => $validated['memo'] ?? null,
+        if ($from->on_budget && ! $to->on_budget && empty($validated['category_id'])) {
+            throw ValidationException::withMessages([
+                'category_id' => 'En overføring ut av budsjettet til en overvåket konto krever en kategori.',
             ]);
+        }
 
-            $toLeg = $to->transactions()->create([
-                'date' => $validated['date'],
-                'amount' => $amount,
-                'payee' => "Overføring fra {$from->name}",
-                'memo' => $validated['memo'] ?? null,
-                'transfer_id' => $fromLeg->id,
-            ]);
-
-            $fromLeg->update(['transfer_id' => $toLeg->id]);
-
-            return $fromLeg;
-        });
+        $fromLeg = $this->transfers->create(
+            from: $from,
+            to: $to,
+            amount: $amount,
+            date: $validated['date'],
+            memo: $validated['memo'] ?? null,
+            categoryId: $validated['category_id'] ?? null,
+        );
 
         return TransactionResource::make($fromLeg->load('transfer.account'))
             ->response()

@@ -11,6 +11,8 @@ export interface Account {
     balance: number;
     cleared_balance: number;
     last_reconciled_at: string | null;
+    uncategorized_count: number; // transaksjoner som mangler aktiv kategorisering
+    bank_synced: boolean; // koblet til banksynk (overføringsregler kan ikke peke hit)
 }
 
 export interface ReconcileResult {
@@ -69,8 +71,18 @@ export interface Rule {
     set_payee: string | null;
     set_memo: string | null;
     category_id: number | null;
+    target_type: RuleTarget;
+    transfer_account_id: number | null;
     last_applied_at: string | null;
 }
+
+export type RuleTarget = 'category' | 'rta' | 'transfer';
+
+export const RULE_TARGET_LABELS: Record<RuleTarget, string> = {
+    category: 'Kategori',
+    rta: 'Klar til å fordele (RTA)',
+    transfer: 'Overføring',
+};
 
 export interface Category {
     id: number;
@@ -129,6 +141,7 @@ export interface BudgetMonth {
     ready_to_assign: number;
     upcoming_income: number; // netto kommende ukategoriserte poster på budsjettkontoer
     projected_ready_to_assign: number;
+    prior_uncategorized: number; // ukategoriserte transaksjoner datert før denne måneden
     groups: BudgetGroup[];
 }
 
@@ -212,8 +225,10 @@ export const FREQUENCY_LABELS: Record<ScheduleFrequency, string> = {
 export interface ScheduledTransaction {
     id: number;
     account_id: number;
+    transfer_account_id: number | null; // satt = planlagt overføring (account_id er «fra»)
     category_id: number | null;
-    amount: number; // signert: positiv = inntekt, negativ = utgift
+    rta: boolean; // bevisst til «Klar til å fordele» (posteringen får rta=true)
+    amount: number; // signert: positiv = inntekt, negativ = utgift (for overføringer: negativt fra account_id)
     payee: string | null;
     memo: string | null;
     frequency: ScheduleFrequency;

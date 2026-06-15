@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Enums\RuleApplies;
+use App\Enums\RuleTarget;
 use App\Http\Resources\RuleResource;
+use App\Models\BankAccount;
 use App\Models\Rule;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -80,14 +82,39 @@ class RuleController extends Controller
             'set_payee' => ['nullable', 'string', 'max:255'],
             'set_memo' => ['nullable', 'string'],
             'category_id' => ['nullable', ValidationRule::exists('categories', 'id')],
+            'target_type' => ['sometimes', ValidationRule::enum(RuleTarget::class)],
+            'transfer_account_id' => ['nullable', ValidationRule::exists('accounts', 'id')],
         ]);
 
-        // Minst én handling må være satt (med mindre dette er en delvis oppdatering
-        // som ikke rører handlingsfeltene).
+        // Valider mål/handling kun når mål- eller handlingsfeltene er berørt.
         $touchesActions = ! $partial
-            || $request->hasAny(['set_payee', 'set_memo', 'category_id']);
+            || $request->hasAny(['target_type', 'set_payee', 'set_memo', 'category_id', 'transfer_account_id']);
 
-        if ($touchesActions) {
+        if (! $touchesActions) {
+            return $validated;
+        }
+
+        $target = $validated['target_type'] ?? RuleTarget::Category->value;
+
+        if ($target === RuleTarget::Transfer->value) {
+            $accountId = $validated['transfer_account_id'] ?? null;
+            if (blank($accountId)) {
+                throw ValidationException::withMessages([
+                    'transfer_account_id' => [__('Velg en mottakerkonto for overføringsregelen.')],
+                ]);
+            }
+            // Målkontoen må være en ikke-synket konto, ellers importerer den andre
+            // siden sitt eget ben og man får dobbeltpostering.
+            if (BankAccount::where('account_id', $accountId)->exists()) {
+                throw ValidationException::withMessages([
+                    'transfer_account_id' => [__('Overføring kan kun gå til en konto som ikke er koblet til banksynk.')],
+                ]);
+            }
+        } elseif ($target === RuleTarget::Rta->value) {
+            // RTA er i seg selv handlingen; kategori/overføring gir ikke mening.
+            $validated['category_id'] = null;
+            $validated['transfer_account_id'] = null;
+        } else { // category
             $payee = $validated['set_payee'] ?? ($partial ? $request->input('set_payee') : null);
             $memo = $validated['set_memo'] ?? ($partial ? $request->input('set_memo') : null);
             $category = $validated['category_id'] ?? ($partial ? $request->input('category_id') : null);
@@ -97,6 +124,7 @@ class RuleController extends Controller
                     'set_payee' => [__('En regel må sette minst én av payee, memo eller kategori.')],
                 ]);
             }
+            $validated['transfer_account_id'] = null;
         }
 
         return $validated;

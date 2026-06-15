@@ -20,6 +20,7 @@ import type {
     ReconcileResult,
     Rule,
     RuleApplies,
+    RuleTarget,
     SpendingReport,
     ScheduledTransaction,
     ScheduleFrequency,
@@ -109,6 +110,7 @@ export interface TransactionQuery {
     to?: string;
     perPage?: number;
     page?: number;
+    uncategorized?: boolean;
 }
 
 export async function getTransactions(
@@ -121,6 +123,8 @@ export async function getTransactions(
             to: query.to || undefined,
             per_page: query.perPage,
             page: query.page,
+            // Send 1 (ikke true) – Laravels boolean-regel godtar ikke strengen «true».
+            uncategorized: query.uncategorized ? 1 : undefined,
         },
     });
     return res.data;
@@ -141,6 +145,7 @@ export interface NewTransaction {
     payee?: string;
     memo?: string;
     cleared?: boolean;
+    rta?: boolean; // bevisst plassert i «Klar til å fordele»
 }
 
 export async function createTransaction(
@@ -172,6 +177,7 @@ export interface NewTransfer {
     amount: number; // positivt beløp
     date: string;
     memo?: string;
+    category_id?: number | null; // kreves når budsjett → overvåket konto
 }
 
 /** Overføring mellom to kontoer (to sammenkoblede ben). Returnerer fra-benet. */
@@ -348,7 +354,9 @@ export async function deleteGoal(categoryId: number): Promise<void> {
 
 export interface NewScheduledTransaction {
     account_id: number;
+    transfer_account_id?: number | null; // satt = planlagt overføring
     category_id?: number | null;
+    rta?: boolean; // bevisst til «Klar til å fordele»
     amount: number;
     payee?: string | null;
     memo?: string | null;
@@ -453,6 +461,8 @@ export interface RuleInput {
     set_payee?: string | null;
     set_memo?: string | null;
     category_id?: number | null;
+    target_type?: RuleTarget;
+    transfer_account_id?: number | null;
     active?: boolean;
 }
 

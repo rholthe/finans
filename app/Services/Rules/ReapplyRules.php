@@ -2,6 +2,7 @@
 
 namespace App\Services\Rules;
 
+use App\Enums\RuleTarget;
 use App\Models\Transaction;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
@@ -84,10 +85,19 @@ class ReapplyRules
     {
         $result = $this->rules->apply((string) $transaction->bank_description, (float) $transaction->amount);
 
+        // Overføringsregler anvendes kun ved import (de oppretter et motpart-ben);
+        // ved re-kjøring på eksisterende rader lar vi raden være urørt.
+        if ($result->target === RuleTarget::Transfer) {
+            return false;
+        }
+
+        $isRta = $result->target === RuleTarget::Rta;
+
         $new = [
             'payee' => $result->payee ?? Str::limit((string) $transaction->bank_description, 255, ''),
             'memo' => $result->memo ?? $transaction->bank_description,
-            'category_id' => $result->categoryId,
+            'category_id' => $isRta ? null : $result->categoryId,
+            'rta' => $isRta,
             'rule_id' => $result->ruleId,
         ];
 

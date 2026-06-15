@@ -39,6 +39,8 @@ class ReconciliationService
                     'amount' => $difference,
                     'payee' => 'Avstemmingsjustering',
                     'cleared' => true,
+                    // Bevisst ukategorisert justering mot RTA – ikke et «mangler kategori».
+                    'rta' => true,
                     'reconciled_at' => $now,
                 ]);
             } else {

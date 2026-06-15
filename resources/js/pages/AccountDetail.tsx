@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import Layout from '@/components/Layout';
 import Modal from '@/components/Modal';
 import RuleForm from '@/components/RuleForm';
@@ -40,12 +40,16 @@ export default function AccountDetail() {
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [meta, setMeta] = useState<PageMeta | null>(null);
     const [groups, setGroups] = useState<CategoryGroup[]>([]);
+    const [allAccounts, setAllAccounts] = useState<Account[]>([]);
     const [loading, setLoading] = useState(true);
 
+    const [searchParams] = useSearchParams();
     const [from, setFrom] = useState('');
     const [to, setTo] = useState('');
     const [perPage, setPerPage] = useState(100);
     const [page, setPage] = useState(1);
+    // Forhåndsfiltrer til ukategoriserte når badgen lenker hit (?uncategorized=1).
+    const [onlyUncat, setOnlyUncat] = useState(searchParams.get('uncategorized') === '1');
 
     const [editingId, setEditingId] = useState<number | null>(null);
     const [ruleForTx, setRuleForTx] = useState<Transaction | null>(null);
@@ -55,12 +59,12 @@ export default function AccountDetail() {
     const reload = useCallback(async () => {
         const [acc, paged] = await Promise.all([
             getAccount(accountId),
-            getTransactions(accountId, { from, to, perPage, page }),
+            getTransactions(accountId, { from, to, perPage, page, uncategorized: onlyUncat }),
         ]);
         setAccount(acc);
         setTransactions(paged.data);
         setMeta(paged.meta);
-    }, [accountId, from, to, perPage, page]);
+    }, [accountId, from, to, perPage, page, onlyUncat]);
 
     useEffect(() => {
         setLoading(true);
@@ -69,6 +73,7 @@ export default function AccountDetail() {
 
     useEffect(() => {
         listCategoryGroups().then(setGroups).catch(() => setGroups([]));
+        listAccounts().then(setAllAccounts).catch(() => setAllAccounts([]));
     }, []);
 
     const categoryName = useMemo(
@@ -186,6 +191,7 @@ export default function AccountDetail() {
                     </p>
                     <RuleForm
                         groups={groups}
+                        accounts={allAccounts}
                         prefillMatch={ruleForTx.bank_description ?? ruleForTx.payee ?? ''}
                         onSaved={() => {
                             setRuleForTx(null);
@@ -252,6 +258,22 @@ export default function AccountDetail() {
                     </button>
                 )}
 
+                {(onlyUncat || account.uncategorized_count > 0) && (
+                    <button
+                        onClick={() => {
+                            setOnlyUncat((v) => !v);
+                            setPage(1);
+                        }}
+                        className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${
+                            onlyUncat
+                                ? 'border-amber-300 bg-amber-50 text-amber-700'
+                                : 'border-neutral-300 text-neutral-700 hover:bg-neutral-100'
+                        }`}
+                    >
+                        {onlyUncat ? 'Viser ukategoriserte' : `Kun ukategoriserte (${account.uncategorized_count})`}
+                    </button>
+                )}
+
                 <div className="ml-auto flex items-center gap-3">
                     <button
                         onClick={applyToShown}
@@ -272,6 +294,7 @@ export default function AccountDetail() {
                         <tr>
                             <th className="px-4 py-2 font-medium">Dato</th>
                             <th className="px-4 py-2 font-medium">Mottaker</th>
+                            <th className="px-4 py-2 font-medium">Overføring</th>
                             <th className="px-4 py-2 font-medium">Kategori</th>
                             <th className="px-4 py-2 text-center font-medium">Klarert</th>
                             <th className="px-4 py-2 text-right font-medium">Beløp</th>
@@ -281,7 +304,7 @@ export default function AccountDetail() {
                     <tbody className="divide-y divide-neutral-100">
                         {transactions.length === 0 ? (
                             <tr>
-                                <td colSpan={6} className="px-4 py-6 text-center text-neutral-400">
+                                <td colSpan={7} className="px-4 py-6 text-center text-neutral-400">
                                     Ingen transaksjoner.
                                 </td>
                             </tr>
@@ -289,10 +312,11 @@ export default function AccountDetail() {
                             transactions.map((tx) =>
                                 editingId === tx.id ? (
                                     <tr key={tx.id}>
-                                        <td colSpan={6} className="px-4 py-3">
+                                        <td colSpan={7} className="px-4 py-3">
                                             <EditTransactionForm
                                                 tx={tx}
                                                 groups={groups}
+                                                categorizable={account.on_budget}
                                                 onSaved={() => {
                                                     setEditingId(null);
                                                     reload();
@@ -340,9 +364,22 @@ export default function AccountDetail() {
                                         </td>
                                         <td className="px-4 py-2 text-neutral-500">
                                             {tx.transfer_id ? (
-                                                <span className="italic text-neutral-400">⇄ Overføring</span>
+                                                <span className="whitespace-nowrap italic text-neutral-500">
+                                                    ⇄ {tx.transfer_account ?? 'Overføring'}
+                                                </span>
+                                            ) : (
+                                                ''
+                                            )}
+                                        </td>
+                                        <td className="px-4 py-2 text-neutral-500">
+                                            {!account.on_budget ? (
+                                                <span className="italic text-neutral-400">ikke behov</span>
                                             ) : tx.category_id ? (
                                                 categoryName.get(tx.category_id) ?? '—'
+                                            ) : tx.rta ? (
+                                                <span className="italic text-neutral-400">Tildelt RTA</span>
+                                            ) : tx.transfer_id ? (
+                                                <span className="italic text-neutral-400">ikke behov</span>
                                             ) : (
                                                 '—'
                                             )}
@@ -469,6 +506,13 @@ function ReconcileModal({
     return (
         <Modal title={`Avstem ${account.name}`} onClose={onClose}>
             <form onSubmit={submit} className="space-y-3">
+                {account.uncategorized_count > 0 && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                        <span aria-hidden>⚠️</span> Kontoen har {account.uncategorized_count} ukategorisert
+                        {account.uncategorized_count === 1 ? ' transaksjon' : 'e transaksjoner'}. Avstemming
+                        fungerer fortsatt, men kategoriser dem gjerne først for et korrekt budsjett.
+                    </div>
+                )}
                 <p className="text-sm text-neutral-500">
                     Klarert saldo:{' '}
                     <span className="font-medium tabular-nums">{formatNok(account.cleared_balance)}</span>
@@ -552,21 +596,35 @@ function EntryForms({
                 ))}
             </div>
             {mode === 'transaction' ? (
-                <NewTransactionForm accountId={account.id} groups={groups} onCreated={onCreated} />
+                <NewTransactionForm
+                    accountId={account.id}
+                    groups={groups}
+                    categorizable={account.on_budget}
+                    onCreated={onCreated}
+                />
             ) : (
-                <NewTransferForm account={account} onCreated={onCreated} />
+                <NewTransferForm account={account} groups={groups} onCreated={onCreated} />
             )}
         </div>
     );
 }
 
-function NewTransferForm({ account, onCreated }: { account: Account; onCreated: () => void }) {
+function NewTransferForm({
+    account,
+    groups,
+    onCreated,
+}: {
+    account: Account;
+    groups: CategoryGroup[];
+    onCreated: () => void;
+}) {
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [otherId, setOtherId] = useState('');
     const [direction, setDirection] = useState<'out' | 'in'>('out');
     const [amount, setAmount] = useState('');
     const [date, setDate] = useState(todayIso());
     const [memo, setMemo] = useState('');
+    const [categoryId, setCategoryId] = useState('');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -575,6 +633,13 @@ function NewTransferForm({ account, onCreated }: { account: Account; onCreated: 
             .then((all) => setAccounts(all.filter((a) => a.id !== account.id && !a.closed)))
             .catch(() => setAccounts([]));
     }, [account.id]);
+
+    // Avsender/mottaker gitt retning, og om dette er en overføring UT av budsjettet
+    // til en overvåket konto (da kreves kategori på budsjett-benet).
+    const otherAccount = accounts.find((a) => a.id === Number(otherId));
+    const fromAcc = direction === 'out' ? account : otherAccount;
+    const toAcc = direction === 'out' ? otherAccount : account;
+    const needsCategory = !!fromAcc?.on_budget && !!toAcc && !toAcc.on_budget;
 
     async function onSubmit(e: FormEvent) {
         e.preventDefault();
@@ -588,6 +653,10 @@ function NewTransferForm({ account, onCreated }: { account: Account; onCreated: 
             setError('Oppgi et beløp.');
             return;
         }
+        if (needsCategory && !categoryId) {
+            setError('Overføring ut av budsjettet krever en kategori.');
+            return;
+        }
         setBusy(true);
         setError(null);
         try {
@@ -597,9 +666,11 @@ function NewTransferForm({ account, onCreated }: { account: Account; onCreated: 
                 amount: magnitude,
                 date,
                 memo: memo || undefined,
+                category_id: needsCategory ? Number(categoryId) : undefined,
             });
             setAmount('');
             setMemo('');
+            setCategoryId('');
             onCreated();
         } catch (err) {
             setError(apiErrorMessage(err, 'Kunne ikke opprette overføringen.'));
@@ -667,6 +738,29 @@ function NewTransferForm({ account, onCreated }: { account: Account; onCreated: 
                 </select>
             </label>
 
+            {needsCategory && (
+                <label className="text-sm font-medium text-neutral-700">
+                    Kategori
+                    <select
+                        value={categoryId}
+                        onChange={(e) => setCategoryId(e.target.value)}
+                        className="mt-1 block rounded-lg border border-neutral-300 px-3 py-2 focus:border-neutral-900 focus:outline-none"
+                        title="Overføring ut av budsjettet er kategorisert forbruk"
+                    >
+                        <option value="">Velg kategori …</option>
+                        {groups.map((group) => (
+                            <optgroup key={group.id} label={group.name}>
+                                {group.categories.map((category) => (
+                                    <option key={category.id} value={category.id}>
+                                        {category.name}
+                                    </option>
+                                ))}
+                            </optgroup>
+                        ))}
+                    </select>
+                </label>
+            )}
+
             <label className="text-sm font-medium text-neutral-700">
                 Beløp
                 <input
@@ -695,10 +789,12 @@ function NewTransferForm({ account, onCreated }: { account: Account; onCreated: 
 function NewTransactionForm({
     accountId,
     groups,
+    categorizable,
     onCreated,
 }: {
     accountId: number;
     groups: CategoryGroup[];
+    categorizable: boolean;
     onCreated: () => void;
 }) {
     const empty = { date: todayIso(), payee: '', memo: '', amount: '', category_id: '' };
@@ -716,10 +812,13 @@ function NewTransactionForm({
         }
         setBusy(true);
         setError(null);
+        const rta = categorizable && form.category_id === 'rta';
         const payload: NewTransaction = {
             date: form.date,
             amount: direction === 'out' ? -magnitude : magnitude,
-            category_id: form.category_id ? Number(form.category_id) : null,
+            // Overvåkede kontoer: kategori er aldri relevant.
+            category_id: !categorizable || rta || !form.category_id ? null : Number(form.category_id),
+            rta,
             payee: form.payee || undefined,
             memo: form.memo || undefined,
         };
@@ -759,7 +858,7 @@ function NewTransactionForm({
                 />
             </label>
 
-            {groups.length > 0 && (
+            {categorizable && groups.length > 0 && (
                 <label className="text-sm font-medium text-neutral-700">
                     Kategori
                     <select
@@ -767,7 +866,8 @@ function NewTransactionForm({
                         onChange={(e) => setForm({ ...form, category_id: e.target.value })}
                         className="mt-1 block rounded-lg border border-neutral-300 px-3 py-2 focus:border-neutral-900 focus:outline-none"
                     >
-                        <option value="">Ingen (inntekt / ufordelt)</option>
+                        <option value="">Ukategorisert</option>
+                        <option value="rta">Klar til å fordele (RTA)</option>
                         {groups.map((group) => (
                             <optgroup key={group.id} label={group.name}>
                                 {group.categories.map((category) => (
@@ -829,11 +929,13 @@ function NewTransactionForm({
 function EditTransactionForm({
     tx,
     groups,
+    categorizable,
     onSaved,
     onCancel,
 }: {
     tx: Transaction;
     groups: CategoryGroup[];
+    categorizable: boolean;
     onSaved: () => void;
     onCancel: () => void;
 }) {
@@ -842,20 +944,25 @@ function EditTransactionForm({
     const [memo, setMemo] = useState(tx.memo ?? '');
     const [direction, setDirection] = useState<'out' | 'in'>(tx.amount < 0 ? 'out' : 'in');
     const [amount, setAmount] = useState(String(Math.abs(tx.amount)));
-    const [categoryId, setCategoryId] = useState(String(tx.category_id ?? ''));
+    // 'rta' = Klar til å fordele, '' = ukategorisert, ellers kategori-id.
+    const [placement, setPlacement] = useState(tx.rta ? 'rta' : String(tx.category_id ?? ''));
     const [busy, setBusy] = useState(false);
 
     async function submit(e: FormEvent) {
         e.preventDefault();
         const magnitude = Math.abs(Number(amount));
+        const rta = placement === 'rta';
         setBusy(true);
-        // Manuell redigering låser raden automatisk (backend).
+        // Manuell redigering låser raden automatisk (backend). På overvåkede
+        // kontoer er kategori aldri relevant – da sender vi ikke kategori/RTA.
         await updateTransaction(tx.id, {
             date,
             amount: direction === 'out' ? -magnitude : magnitude,
             payee: payee || undefined,
             memo: memo || undefined,
-            category_id: categoryId ? Number(categoryId) : null,
+            ...(categorizable
+                ? { category_id: rta || !placement ? null : Number(placement), rta }
+                : {}),
         });
         setBusy(false);
         onSaved();
@@ -888,25 +995,28 @@ function EditTransactionForm({
                     className="mt-1 block w-full rounded-lg border border-neutral-300 px-2 py-1.5 text-sm focus:border-neutral-900 focus:outline-none"
                 />
             </label>
-            <label className="text-xs font-medium text-neutral-600">
-                Kategori
-                <select
-                    value={categoryId}
-                    onChange={(e) => setCategoryId(e.target.value)}
-                    className="mt-1 block rounded-lg border border-neutral-300 px-2 py-1.5 text-sm focus:border-neutral-900 focus:outline-none"
-                >
-                    <option value="">Ingen</option>
-                    {groups.map((group) => (
-                        <optgroup key={group.id} label={group.name}>
-                            {group.categories.map((category) => (
-                                <option key={category.id} value={category.id}>
-                                    {category.name}
-                                </option>
-                            ))}
-                        </optgroup>
-                    ))}
-                </select>
-            </label>
+            {categorizable && (
+                <label className="text-xs font-medium text-neutral-600">
+                    Kategori
+                    <select
+                        value={placement}
+                        onChange={(e) => setPlacement(e.target.value)}
+                        className="mt-1 block rounded-lg border border-neutral-300 px-2 py-1.5 text-sm focus:border-neutral-900 focus:outline-none"
+                    >
+                        <option value="">Ukategorisert</option>
+                        <option value="rta">Klar til å fordele (RTA)</option>
+                        {groups.map((group) => (
+                            <optgroup key={group.id} label={group.name}>
+                                {group.categories.map((category) => (
+                                    <option key={category.id} value={category.id}>
+                                        {category.name}
+                                    </option>
+                                ))}
+                            </optgroup>
+                        ))}
+                    </select>
+                </label>
+            )}
             <div className="text-xs font-medium text-neutral-600">
                 Retning
                 <div className="mt-1 flex overflow-hidden rounded-lg border border-neutral-300 text-sm">

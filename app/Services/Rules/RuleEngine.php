@@ -29,6 +29,8 @@ class RuleEngine
                 memo: $rule->set_memo,
                 categoryId: $rule->category_id,
                 ruleId: $rule->id,
+                target: $rule->target_type,
+                transferAccountId: $rule->transfer_account_id,
             );
         }
 

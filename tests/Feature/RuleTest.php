@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Account;
+use App\Models\BankConnection;
 use App\Models\Category;
 use App\Models\Rule;
 use App\Models\Transaction;
@@ -143,5 +144,43 @@ class RuleTest extends TestCase
             ->assertJsonPath('data.locked', true);
 
         $this->assertTrue($transaction->fresh()->locked);
+    }
+
+    public function test_rta_regel_er_gyldig_uten_payee_memo_kategori(): void
+    {
+        $this->postJson('/api/rules', [
+            'match_contains' => 'LØNN',
+            'target_type' => 'rta',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.target_type', 'rta');
+    }
+
+    public function test_overforingsregel_krever_mottakerkonto(): void
+    {
+        $this->postJson('/api/rules', [
+            'match_contains' => 'SPARING',
+            'target_type' => 'transfer',
+        ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrorFor('transfer_account_id');
+    }
+
+    public function test_overforingsregel_avviser_synket_malkonto(): void
+    {
+        $account = Account::factory()->create();
+        // Koble en bank-konto til kontoen → den er nå «synket».
+        $connection = BankConnection::create([
+            'institution_id' => 'DNB', 'name' => 'DNB', 'consent_id' => 'c1', 'status' => 'LN',
+        ]);
+        $connection->bankAccounts()->create(['account_id' => $account->id, 'external_id' => 'acc-x']);
+
+        $this->postJson('/api/rules', [
+            'match_contains' => 'SPARING',
+            'target_type' => 'transfer',
+            'transfer_account_id' => $account->id,
+        ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrorFor('transfer_account_id');
     }
 }

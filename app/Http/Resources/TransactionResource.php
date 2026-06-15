@@ -29,6 +29,7 @@ class TransactionResource extends JsonResource
             'memo' => $this->memo,
             'cleared' => $this->cleared,
             'pending' => $this->pending,
+            'rta' => $this->rta,
             'reconciled_at' => $this->reconciled_at?->toIso8601String(),
             'is_starting_balance' => $this->is_starting_balance,
             'transfer_id' => $this->transfer_id,

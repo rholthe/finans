@@ -49,4 +49,14 @@ class Account extends Model
     {
         return $this->hasMany(Reconciliation::class);
     }
+
+    /**
+     * Koblede bank-kontoer (banksynk). Tom = kontoen synkes ikke.
+     *
+     * @return HasMany<BankAccount, $this>
+     */
+    public function bankAccounts(): HasMany
+    {
+        return $this->hasMany(BankAccount::class);
+    }
 }

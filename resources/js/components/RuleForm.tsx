@@ -1,6 +1,14 @@
 import { useState, type FormEvent } from 'react';
 import { apiErrorMessage, createRule, updateRule, type RuleInput } from '@/lib/data';
-import { APPLIES_TO_LABELS, type CategoryGroup, type Rule, type RuleApplies } from '@/types';
+import {
+    APPLIES_TO_LABELS,
+    RULE_TARGET_LABELS,
+    type Account,
+    type CategoryGroup,
+    type Rule,
+    type RuleApplies,
+    type RuleTarget,
+} from '@/types';
 
 /**
  * Skjema for å opprette/redigere en regel. Brukes både på Regler-siden og for
@@ -8,12 +16,14 @@ import { APPLIES_TO_LABELS, type CategoryGroup, type Rule, type RuleApplies } fr
  */
 export default function RuleForm({
     groups,
+    accounts,
     existing,
     prefillMatch,
     onSaved,
     onCancel,
 }: {
     groups: CategoryGroup[];
+    accounts: Account[];
     existing?: Rule;
     prefillMatch?: string;
     onSaved: (rule: Rule) => void;
@@ -23,11 +33,16 @@ export default function RuleForm({
     const [matchContains, setMatchContains] = useState(existing?.match_contains ?? prefillMatch ?? '');
     const [matchNotContains, setMatchNotContains] = useState(existing?.match_not_contains ?? '');
     const [appliesTo, setAppliesTo] = useState<RuleApplies>(existing?.applies_to ?? 'both');
+    const [target, setTarget] = useState<RuleTarget>(existing?.target_type ?? 'category');
     const [setPayee, setSetPayee] = useState(existing?.set_payee ?? '');
     const [setMemo, setSetMemo] = useState(existing?.set_memo ?? '');
     const [categoryId, setCategoryId] = useState(String(existing?.category_id ?? ''));
+    const [transferAccountId, setTransferAccountId] = useState(String(existing?.transfer_account_id ?? ''));
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    // Overføringsmål kan kun peke på en konto uten banksynk.
+    const transferTargets = accounts.filter((a) => !a.bank_synced && !a.closed);
 
     async function submit(e: FormEvent) {
         e.preventDefault();
@@ -35,8 +50,12 @@ export default function RuleForm({
             setError('Oppgi minst én term i «inneholder».');
             return;
         }
-        if (!setPayee.trim() && !setMemo.trim() && !categoryId) {
+        if (target === 'category' && !setPayee.trim() && !setMemo.trim() && !categoryId) {
             setError('Sett minst én av payee, memo eller kategori.');
+            return;
+        }
+        if (target === 'transfer' && !transferAccountId) {
+            setError('Velg en mottakerkonto for overføringen.');
             return;
         }
         setBusy(true);
@@ -48,7 +67,9 @@ export default function RuleForm({
             applies_to: appliesTo,
             set_payee: setPayee.trim() || null,
             set_memo: setMemo.trim() || null,
-            category_id: categoryId ? Number(categoryId) : null,
+            target_type: target,
+            category_id: target === 'rta' ? null : categoryId ? Number(categoryId) : null,
+            transfer_account_id: target === 'transfer' ? Number(transferAccountId) : null,
         };
         try {
             const rule = existing ? await updateRule(existing.id, payload) : await createRule(payload);
@@ -115,24 +136,90 @@ export default function RuleForm({
             </label>
 
             <label className="text-sm font-medium text-neutral-700">
-                Sett kategori
+                Mål
                 <select
-                    value={categoryId}
-                    onChange={(e) => setCategoryId(e.target.value)}
+                    value={target}
+                    onChange={(e) => setTarget(e.target.value as RuleTarget)}
                     className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 focus:border-neutral-900 focus:outline-none"
                 >
-                    <option value="">Ingen</option>
-                    {groups.map((group) => (
-                        <optgroup key={group.id} label={group.name}>
-                            {group.categories.map((category) => (
-                                <option key={category.id} value={category.id}>
-                                    {category.name}
-                                </option>
-                            ))}
-                        </optgroup>
+                    {(Object.keys(RULE_TARGET_LABELS) as RuleTarget[]).map((value) => (
+                        <option key={value} value={value}>
+                            {RULE_TARGET_LABELS[value]}
+                        </option>
                     ))}
                 </select>
             </label>
+
+            {target === 'category' && (
+                <label className="text-sm font-medium text-neutral-700">
+                    Sett kategori
+                    <select
+                        value={categoryId}
+                        onChange={(e) => setCategoryId(e.target.value)}
+                        className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 focus:border-neutral-900 focus:outline-none"
+                    >
+                        <option value="">Ingen</option>
+                        {groups.map((group) => (
+                            <optgroup key={group.id} label={group.name}>
+                                {group.categories.map((category) => (
+                                    <option key={category.id} value={category.id}>
+                                        {category.name}
+                                    </option>
+                                ))}
+                            </optgroup>
+                        ))}
+                    </select>
+                </label>
+            )}
+
+            {target === 'rta' && (
+                <p className="self-end text-sm text-neutral-500">
+                    Markeres som «Klar til å fordele» (typisk lønn).
+                </p>
+            )}
+
+            {target === 'transfer' && (
+                <label className="text-sm font-medium text-neutral-700">
+                    Overfør til konto
+                    <select
+                        value={transferAccountId}
+                        onChange={(e) => setTransferAccountId(e.target.value)}
+                        className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 focus:border-neutral-900 focus:outline-none"
+                    >
+                        <option value="">Velg konto …</option>
+                        {transferTargets.map((account) => (
+                            <option key={account.id} value={account.id}>
+                                {account.name}
+                            </option>
+                        ))}
+                    </select>
+                    <span className="mt-1 block text-xs font-normal text-neutral-400">
+                        Kun kontoer uten banksynk (unngår dobbeltpostering).
+                    </span>
+                </label>
+            )}
+
+            {target === 'transfer' && (
+                <label className="text-sm font-medium text-neutral-700">
+                    Kategori (kun ved overføring ut av budsjettet)
+                    <select
+                        value={categoryId}
+                        onChange={(e) => setCategoryId(e.target.value)}
+                        className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 focus:border-neutral-900 focus:outline-none"
+                    >
+                        <option value="">Ingen</option>
+                        {groups.map((group) => (
+                            <optgroup key={group.id} label={group.name}>
+                                {group.categories.map((category) => (
+                                    <option key={category.id} value={category.id}>
+                                        {category.name}
+                                    </option>
+                                ))}
+                            </optgroup>
+                        ))}
+                    </select>
+                </label>
+            )}
 
             <label className="text-sm font-medium text-neutral-700 sm:col-span-2">
                 Sett memo (valgfritt)

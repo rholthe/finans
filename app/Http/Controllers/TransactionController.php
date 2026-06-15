@@ -24,12 +24,14 @@ class TransactionController extends Controller
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:500'],
+            'uncategorized' => ['nullable', 'boolean'],
         ]);
 
         $transactions = $account->transactions()
             ->with('transfer.account')
             ->when($validated['from'] ?? null, fn ($q, $from) => $q->whereDate('date', '>=', $from))
             ->when($validated['to'] ?? null, fn ($q, $to) => $q->whereDate('date', '<=', $to))
+            ->when($validated['uncategorized'] ?? false, fn ($q) => $q->needsCategorization())
             ->orderByDesc('date')
             ->orderByDesc('id')
             ->paginate($validated['per_page'] ?? 100)
@@ -70,9 +72,17 @@ class TransactionController extends Controller
 
         $validated = $this->validatePayload($request, partial: true);
 
-        // En manuell endring av regelstyrte felter låser raden, slik at
-        // regelmotoren aldri overskriver den senere.
-        if ($request->hasAny(['payee', 'memo', 'category_id'])) {
+        // RTA og en konkret kategori utelukker hverandre: «Klar til å fordele»
+        // betyr ukategorisert + rta=true; en konkret kategori nullstiller rta.
+        if (($validated['rta'] ?? false) === true) {
+            $validated['category_id'] = null;
+        } elseif (! empty($validated['category_id'])) {
+            $validated['rta'] = false;
+        }
+
+        // En manuell endring av regelstyrte felter (inkl. aktivt RTA-valg) låser
+        // raden, slik at regelmotoren aldri overskriver den senere.
+        if ($request->hasAny(['payee', 'memo', 'category_id', 'rta'])) {
             $validated['locked'] = true;
         }
 
@@ -123,6 +133,7 @@ class TransactionController extends Controller
             'memo' => ['nullable', 'string'],
             'cleared' => ['sometimes', 'boolean'],
             'locked' => ['sometimes', 'boolean'],
+            'rta' => ['sometimes', 'boolean'],
         ]);
     }
 }

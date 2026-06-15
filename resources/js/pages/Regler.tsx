@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import Layout from '@/components/Layout';
 import Modal from '@/components/Modal';
 import RuleForm from '@/components/RuleForm';
-import { deleteRule, listCategoryGroups, listRules, reorderRules, updateRule } from '@/lib/data';
-import { APPLIES_TO_LABELS, type CategoryGroup, type Rule } from '@/types';
+import { deleteRule, listAccounts, listCategoryGroups, listRules, reorderRules, updateRule } from '@/lib/data';
+import { APPLIES_TO_LABELS, type Account, type CategoryGroup, type Rule } from '@/types';
 
 export default function Regler() {
     const [rules, setRules] = useState<Rule[]>([]);
     const [groups, setGroups] = useState<CategoryGroup[]>([]);
+    const [accounts, setAccounts] = useState<Account[]>([]);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState<Rule | 'new' | null>(null);
 
@@ -16,7 +17,11 @@ export default function Regler() {
     }
 
     useEffect(() => {
-        Promise.all([reload(), listCategoryGroups().then(setGroups)]).finally(() => setLoading(false));
+        Promise.all([
+            reload(),
+            listCategoryGroups().then(setGroups),
+            listAccounts().then(setAccounts),
+        ]).finally(() => setLoading(false));
     }, []);
 
     const categoryName = useMemo(
@@ -69,6 +74,7 @@ export default function Regler() {
                 >
                     <RuleForm
                         groups={groups}
+                        accounts={accounts}
                         existing={editing === 'new' ? undefined : editing}
                         onSaved={() => {
                             setEditing(null);

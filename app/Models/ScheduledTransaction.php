@@ -16,7 +16,9 @@ class ScheduledTransaction extends Model
 
     protected $fillable = [
         'account_id',
+        'transfer_account_id',
         'category_id',
+        'rta',
         'amount',
         'payee',
         'memo',
@@ -34,6 +36,7 @@ class ScheduledTransaction extends Model
     {
         return [
             'amount' => 'decimal:2',
+            'rta' => 'boolean',
             'frequency' => ScheduleFrequency::class,
             'start_date' => 'date',
             'next_date' => 'date',
@@ -48,6 +51,21 @@ class ScheduledTransaction extends Model
     public function account(): BelongsTo
     {
         return $this->belongsTo(Account::class);
+    }
+
+    /**
+     * Mottakerkonto for en planlagt overføring (null for vanlige planlagte).
+     *
+     * @return BelongsTo<Account, $this>
+     */
+    public function transferAccount(): BelongsTo
+    {
+        return $this->belongsTo(Account::class, 'transfer_account_id');
+    }
+
+    public function isTransfer(): bool
+    {
+        return $this->transfer_account_id !== null;
     }
 
     /**

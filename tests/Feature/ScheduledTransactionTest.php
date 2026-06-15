@@ -6,6 +6,7 @@ use App\Enums\ScheduleFrequency;
 use App\Models\Account;
 use App\Models\Category;
 use App\Models\ScheduledTransaction;
+use App\Models\Transaction;
 use App\Services\ScheduledTransactionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -231,5 +232,119 @@ class ScheduledTransactionTest extends TestCase
         $this->getJson('/api/accounts')->assertOk();
 
         $this->assertDatabaseCount('transactions', 1);
+    }
+
+    public function test_planlagt_til_rta_posteres_med_rta_og_teller_ikke_som_ukategorisert(): void
+    {
+        $account = Account::factory()->create(['on_budget' => true]);
+
+        $this->postJson('/api/scheduled-transactions', [
+            'account_id' => $account->id,
+            'rta' => true,
+            'amount' => 30000,
+            'payee' => 'Lønn',
+            'frequency' => 'monthly',
+            'start_date' => now()->toDateString(),
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.rta', true)
+            ->assertJsonPath('data.category_id', null);
+
+        $this->postDue();
+
+        $tx = $account->transactions()->firstOrFail();
+        $this->assertTrue($tx->rta);
+        $this->assertNull($tx->category_id);
+        // En RTA-postering (lønn) skal ikke flagges som «mangler kategori».
+        $this->assertSame(0, Transaction::query()->needsCategorization()->count());
+    }
+
+    // --- Planlagte overføringer ---
+
+    public function test_planlagt_overforing_posteres_som_to_sammenkoblede_ben(): void
+    {
+        $from = Account::factory()->create(['on_budget' => true]);
+        $to = Account::factory()->create(['on_budget' => true]);
+
+        $this->postJson('/api/scheduled-transactions', [
+            'account_id' => $from->id,
+            'transfer_account_id' => $to->id,
+            'amount' => 500,
+            'frequency' => 'monthly',
+            'start_date' => now()->toDateString(),
+        ])->assertCreated();
+
+        // Beløpet lagres signert negativt fra fra-kontoens ståsted.
+        $schedule = ScheduledTransaction::firstOrFail();
+        $this->assertEquals(-500, $schedule->amount);
+        $this->assertSame($to->id, $schedule->transfer_account_id);
+
+        $this->postDue();
+
+        $fromLeg = $from->transactions()->firstOrFail();
+        $toLeg = $to->transactions()->firstOrFail();
+        $this->assertEquals(-500, $fromLeg->amount);
+        $this->assertEquals(500, $toLeg->amount);
+        $this->assertSame($toLeg->id, $fromLeg->transfer_id);
+        $this->assertSame($schedule->id, $fromLeg->scheduled_transaction_id);
+        // Begge ben er overføringer → ikke «mangler kategori».
+        $this->assertSame(0, Transaction::query()->needsCategorization()->count());
+    }
+
+    public function test_planlagt_overforing_ut_av_budsjett_krever_kategori(): void
+    {
+        $from = Account::factory()->create(['on_budget' => true]);
+        $tracking = Account::factory()->tracking()->create();
+
+        $this->postJson('/api/scheduled-transactions', [
+            'account_id' => $from->id,
+            'transfer_account_id' => $tracking->id,
+            'amount' => 300,
+            'frequency' => 'monthly',
+            'start_date' => now()->toDateString(),
+        ])->assertStatus(422)->assertJsonValidationErrorFor('category_id');
+    }
+
+    public function test_planlagt_overforing_ut_av_budsjett_projiseres_i_kategorien(): void
+    {
+        $cat = Category::factory()->create();
+        $from = Account::factory()->create(['on_budget' => true]);
+        $tracking = Account::factory()->tracking()->create();
+        $month = now()->format('Y-m');
+
+        $this->postJson('/api/scheduled-transactions', [
+            'account_id' => $from->id,
+            'transfer_account_id' => $tracking->id,
+            'category_id' => $cat->id,
+            'amount' => 300,
+            'frequency' => 'monthly',
+            'start_date' => now()->addDay()->toDateString(), // i framtiden → projiseres, ikke postert
+        ])->assertCreated();
+
+        $groups = $this->getJson("/api/budget?month={$month}")->assertOk()->json('groups');
+        $target = collect($groups)->flatMap(fn ($g) => $g['categories'])->firstWhere('id', $cat->id);
+
+        // Kommende kategorisert forbruk (negativt) i kategorien.
+        $this->assertEqualsWithDelta(-300, $target['upcoming'], 0.01);
+    }
+
+    public function test_planlagt_overforing_inn_til_budsjett_projiseres_som_rta(): void
+    {
+        $tracking = Account::factory()->tracking()->create();
+        $budget = Account::factory()->create(['on_budget' => true]);
+        $month = now()->format('Y-m');
+
+        $this->postJson('/api/scheduled-transactions', [
+            'account_id' => $tracking->id,
+            'transfer_account_id' => $budget->id,
+            'amount' => 300,
+            'frequency' => 'monthly',
+            'start_date' => now()->addDay()->toDateString(),
+        ])->assertCreated();
+
+        // Tilflyt inn til budsjettet projiseres som kommende RTA-inntekt.
+        $this->getJson("/api/budget?month={$month}")
+            ->assertOk()
+            ->assertJsonPath('upcoming_income', 300);
     }
 }

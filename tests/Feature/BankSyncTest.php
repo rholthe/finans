@@ -328,4 +328,50 @@ class BankSyncTest extends TestCase
         $this->assertSame(SyncEvent::STATUS_WITH_ERRORS, $event->status);
         $this->assertDatabaseCount('transactions', 0);
     }
+
+    public function test_regel_med_rta_mal_markerer_posteringen_som_rta(): void
+    {
+        $this->linkedAccount();
+        Rule::create(['match_contains' => 'LØNN', 'target_type' => 'rta']);
+        $this->provider->transactions['acc1'] = [$this->tx('inc-1', 25000, '2026-01-10', 'LØNN FIRMA')];
+
+        $this->sync();
+
+        $tx = Transaction::where('external_id', 'inc-1')->firstOrFail();
+        $this->assertTrue($tx->rta);
+        $this->assertNull($tx->category_id);
+        $this->assertSame(0, Transaction::query()->needsCategorization()->count());
+    }
+
+    public function test_regel_med_overforing_lager_to_sammenkoblede_ben(): void
+    {
+        $bankAccount = $this->linkedAccount(); // budsjettkonto
+        $sparing = Account::factory()->tracking()->create(['name' => 'Sparing']); // overvåket, ikke synket
+        $category = Category::factory()->create();
+        Rule::create([
+            'match_contains' => 'SPARING',
+            'target_type' => 'transfer',
+            'transfer_account_id' => $sparing->id,
+            'category_id' => $category->id,
+        ]);
+        $this->provider->transactions['acc1'] = [$this->tx('sav-1', -2000, '2026-01-10', 'FAST SPARING')];
+
+        $this->sync();
+
+        $bankLeg = Transaction::where('external_id', 'sav-1')->firstOrFail();
+        $this->assertSame($bankAccount->account_id, $bankLeg->account_id);
+        $this->assertEquals(-2000, $bankLeg->amount);
+        // Budsjett → overvåket: bank-benet er kategorisert.
+        $this->assertSame($category->id, $bankLeg->category_id);
+        $this->assertNotNull($bankLeg->transfer_id);
+
+        $opposite = Transaction::find($bankLeg->transfer_id);
+        $this->assertSame($sparing->id, $opposite->account_id);
+        $this->assertEquals(2000, $opposite->amount);
+
+        // Re-synk dupliserer ikke (bank-benet beholder external_id for dedup).
+        $this->sync();
+        $this->assertSame(1, Transaction::where('external_id', 'sav-1')->count());
+        $this->assertDatabaseCount('transactions', 2);
+    }
 }
