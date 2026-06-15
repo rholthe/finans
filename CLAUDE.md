@@ -5,11 +5,12 @@ Penger som kommer inn → "Ready to Assign" → fordeles til kategorier i katego
 
 ## Stack
 
-- **Backend:** Laravel 12 (PHP 8.4) som JSON-API. SQLite lokalt.
+- **Backend:** Laravel 12 (PHP 8.4+) som JSON-API. SQLite lokalt, MySQL/MariaDB i prod
+  (rent `.env`-styrt; migrasjonene er DB-agnostiske).
 - **Frontend:** React 19 + TypeScript + React Router 7, bygget med Vite. Tailwind 4.
   Diagrammer med Recharts (kun lastet på Rapporter-siden via lazy/Suspense).
 - **Auth:** Enkeltpassord (hele appen), session-cookie med 1 års levetid. Ingen brukertabell-innlogging.
-- **Kø/cache:** `database`-driver lokalt (ingen Redis-ext lokalt; bytt til Redis i prod).
+- **Kø/cache:** `database`-driver (også i prod – ingen Redis nødvendig).
 
 Frontend og backend er **samme Laravel-app, samme origin**. React-SPA-en serveres av en
 catch-all blade-rute; API-et ligger under `/api/*` med session + CSRF (XSRF-TOKEN-cookie
@@ -31,12 +32,19 @@ Test: `php artisan test`
 
 ## Kjøre i prod
 
+Prod kjører på **finans.example.com** (Apache mod_php + MariaDB; `/var/www/finans`).
+Redeploy gjøres med `./deploy.sh` i prosjektroten (maintenance-modus, `git pull`,
+`composer install --no-dev`, `npm ci && npm run build`, `migrate --force`,
+config/route/view-cache, `queue:restart`). Kjøres som kode-eier – ingen sudo.
+
 Køet synk + scheduler krever to ting på serveren (ingen Redis nødvendig — `database`-driver):
 
 - **Cron:** `* * * * * cd /sti/til/app && php artisan schedule:run >> /dev/null 2>&1`
-- **Kø-arbeider** under Supervisor/systemd: `php artisan queue:work --tries=3 --max-time=3600`
+- **Kø-arbeider** under Supervisor: `php artisan queue:work --tries=3 --max-time=3600`
 
 Scheduleren kjører nattlig banksynk og postering av planlagte transaksjoner (se `routes/console.php`).
+Offentlige `/privacy` + `/terms` (frittstående Blade, utenfor login/SPA) kreves av Enable
+Banking for prod-app-godkjenning.
 
 ## Struktur
 
@@ -48,20 +56,21 @@ Scheduleren kjører nattlig banksynk og postering av planlagte transaksjoner (se
 - `app/Http/Middleware/EnsureScheduledTransactionsPosted.php` — posterer forfalte planlagte ved hvert API-kall
 - `app/Services/Bank/` — `BankDataProvider`-grensesnitt (leverandøruavhengig, «consent»),
   `BankConsent`-DTO, `BankProviderRegistry` (velger leverandør per tilkobling),
-  `GoCardlessProvider`, `EnableBankingProvider`, `NormalizedTransaction`-DTO,
-  `BankSyncService`, `Mapping/` (per-bank feltmapping)
-- `app/Services/Rules/` — `RuleEngine`, `RuleResult`, `ReapplyRules` (leverandøruavhengig)
+  `GoCardlessProvider`, `EnableBankingProvider`, `NormalizedTransaction`-DTO (m/`booked`-flagg),
+  `BankRateLimitException` (429), `BankSyncService`, `Mapping/` (per-bank feltmapping)
+- `app/Services/Rules/` — `RuleEngine`, `RuleResult` (payee/memo + mål), `ReapplyRules` (leverandøruavhengig)
 - `app/Services/` — `BudgetService` (beregner available/RTA), `GoalService`, `ScheduledTransactionService`,
-  `ReconciliationService` (avstemming: klarert saldo → justering),
-  `ReportService` (rapportaggregeringer fra transactions)
+  `TransferService` (oppretter overføringsben m/budsjett↔overvåket-regler – delt av manuell
+  overføring, planlagt overføring og overføringsregel), `ReconciliationService` (avstemming:
+  klarert saldo → justering), `ReportService` (rapportaggregeringer fra transactions)
 - `app/Jobs/SyncBankTransactionsJob.php` — køet banksynk (WithoutOverlapping)
 - `app/Support/AppSettings.php` — brukerstyrte innstillinger (nøkkel/verdi)
-- `app/Enums/` — `AccountType`, `GoalType`, `ScheduleFrequency`, `RuleApplies`
+- `app/Enums/` — `AccountType`, `GoalType`, `ScheduleFrequency`, `RuleApplies`, `RuleTarget`
 - `app/Console/Commands/` — `SetPassword`, `SyncBankTransactions` (`bank:sync`),
   `PostDueScheduledTransactions`, `ReapplyRules` (`rules:reapply`)
 - `resources/js/` — React-SPA (`app.tsx` entry, `Root.tsx` ruter, `pages/`, `components/`,
   `lib/api.ts`, `lib/data.ts`, `auth.tsx`)
-- `resources/views/app.blade.php` — SPA-skall
+- `resources/views/app.blade.php` — SPA-skall; `resources/views/legal/` — offentlige personvern/vilkår
 
 ## Arkitektur-prinsipper
 
@@ -73,14 +82,32 @@ Scheduleren kjører nattlig banksynk og postering av planlagte transaksjoner (se
   sin `provider`, så flere leverandører kan være aktive samtidig. Ingen endring i budsjett-/
   synklogikk. Mønsteret er portet fra referanse-appen.
 - **Regelmotor er leverandøruavhengig:** `RuleEngine` tar info-teksten (`bank_description`)
-  + beløp og setter payee/memo/kategori. Anvendes ved import og på et avgrenset, brukervalgt
-  sett på kontosiden — aldri globalt. Manuelt redigerte rader er `locked` og overskrives aldri.
+  + beløp og setter payee/memo + et **mål** (`RuleTarget`): `category` (konkret kategori),
+  `rta` (marker som «Klar til å fordele» → `rta=true`), eller `transfer` (gjør raden om til en
+  overføring til en valgt konto). Overføringsmål kan kun peke på en **ikke-synket** konto (ellers
+  importerer motparten sitt eget ben → dobbeltpostering) og oppretter motpart-benet ved import;
+  `ReapplyRules` hopper over overføringsmål (konvertering skjer kun ved import). Anvendes ved import
+  og på et avgrenset, brukervalgt sett på kontosiden — aldri globalt. Manuelt redigerte rader er
+  `locked` og overskrives aldri.
 - **«available» lagres aldri** — beregnes kumulativt (assigned + activity) i `BudgetService`,
   så redigering av historikk alltid gir korrekte tall. Samme for `needed` (mål) og kommende/
   projisert (planlagte poster).
 - **Ready to Assign = kun ukategoriserte inntekter − tildelt.** Kategorisert forbruk hører til
   kategoriens `available`, ikke RTA. Identiteten `RTA + Σtilgjengelig = penger på budsjettkonto`
   skal alltid holde (ingen lekkasje).
+- **Ukategorisert skal kategoriseres:** alle ukategoriserte rader teller mot RTA med fortegn (som
+  før), men en egen `transactions.rta`-kolonne skiller **bevisst plassert i RTA** (inntekt/lønn,
+  avstemmingsjustering, satt av bruker/regel) fra **ikke vurdert ennå**. `rta` endrer ikke RTA-
+  regnestykket. «Trenger kategorisering» = `Transaction::scopeNeedsCategorization` (on-budget ·
+  `category_id` null · `rta` false · ikke overføring/startsaldo/pending) → badge per konto, filter
+  på kontosiden, og et ikke-blokkerende advarsel-banner på budsjettsiden når tidligere måneder har
+  ukategoriserte. «Klar til å fordele (RTA)» er et eksplisitt valg i kategori-nedtrekkene.
+  Overvåkede (ikke-budsjett) kontoer har aldri kategori – kolonnen viser «ikke behov».
+- **Bokført vs reservert:** banksynk henter både bokførte og reserverte (`NormalizedTransaction.
+  booked`). Reservert = `pending=true`/`cleared=false` (teller i activity, ikke i avstemming).
+  Bokførte dedup'es på `external_id`; reserverte mangler stabil id, så kontoens ulåste reserverte
+  rader byttes ut med dagens reserverte sett ved hver synk (en post som er bokført siden sist
+  forsvinner og kommer inn som bokført = «oppdatert ved bokføring»).
 - **Kredittkort = vanlig budsjettkonto som kan ha negativ saldo.** Ingen egen
   betalingskategori. Et kjøp på kortet er et helt vanlig kategorisert forbruk (trekker
   kategoriens `available`, ikke RTA), og gjelda reduserer «penger på konto». Kortet betales
@@ -92,11 +119,17 @@ Scheduleren kjører nattlig banksynk og postering av planlagte transaksjoner (se
   identiteten RTA + Σtilgjengelig = penger på konto holder. Alle klarerte rader stemples
   `reconciled_at`; avstemte rader kan fortsatt redigeres, men frontend varsler først. Historikk
   lagres i `reconciliations` (`ReconciliationService`).
-- **Overføringer** er to sammenkoblede, ukategoriserte transaksjoner (`transactions.transfer_id`).
-  De nuller hverandre ut i RTA og brukes bl.a. til å betale ned kredittkort. Begge ben slettes
-  samlet; overføringer kan ikke redigeres (slett + opprett).
+- **Overføringer** er to sammenkoblede transaksjoner (`transactions.transfer_id`), opprettet via
+  `TransferService`. Kategori avhenger av budsjettgrensen: budsjett↔budsjett og overvåket↔overvåket
+  er RTA-nøytrale (ingen kategori); **budsjett→overvåket** er kategorisert forbruk (krever kategori
+  på budsjett-benet); **overvåket→budsjett** er tilflyt (budsjett-benet får `rta=true`). Begge ben
+  er `locked` (kan ikke redigeres) og slettes samlet. Brukes bl.a. til å betale ned kredittkort
+  (budsjett↔budsjett). Manuell overføring, planlagt overføring og overføringsregel deler samme tjeneste.
 - **Banksynk:** deduplisering per `account_id:external_id` (samme external_id kan gjelde flere
-  kontoer). Rapport-e-post sendes til `BANK_SYNC_REPORT_EMAIL` ved både suksess og feil.
+  kontoer). Rapport-e-post sendes til `BANK_SYNC_REPORT_EMAIL` ved både suksess og feil. GoCardless
+  oppgir rate-limit i headere (`X-RateLimit-Account-Success-*`); Enable Banking gjør **ikke** det –
+  kun `429` signaliserer grensen, som fanges (`BankRateLimitException`) og markerer kontoen ikke-
+  synkbar til neste runde.
 - **Ingen YNAB-lengdegrenser** på payee/memo lenger. **Kun NOK** i første omgang.
 
 ## Faseplan
@@ -108,17 +141,25 @@ Scheduleren kjører nattlig banksynk og postering av planlagte transaksjoner (se
 4. ✅ Bankintegrasjon (GoCardless bak `BankDataProvider`)
 5. ✅ Auto-kategorisering (regelmotor: payee + memo + kategori, med avgrenset anvendelse + lås)
 6. ✅ Nattlig sync-jobb (kø + scheduler) + innstillinger (synk-dager) + gjenstående synk
-7. ✅ Planlagte/repeterende transaksjoner (regningsmodul: frekvens, auto-postering, projeksjon)
+7. ✅ Planlagte/repeterende transaksjoner (regningsmodul: frekvens, auto-postering, projeksjon).
+   Støtter også planlagte **overføringer** (`transfer_account_id`) og RTA-mål.
 8. 🟡 Avansert:
    - ✅ Kredittkort som vanlig konto (kan ha negativ saldo) + overføringer for nedbetaling
    - ✅ Avstemming (reconciliation)
    - ✅ Rapporter (forbruk per kategori, inntekt/forbruk, kategoritrend, nettoformue – Recharts)
-   - ✅ 2. bankleverandør (Enable Banking; normalisert consent-grensesnitt + provider-kolonne)
+   - ✅ 2. bankleverandør (Enable Banking; normalisert consent-grensesnitt + provider-kolonne;
+     bokført/reservert + 429-håndtering)
 9. 🟡 Tverrgående: design/UX-polish + brukertilbakemeldinger (side for side)
    - Konvensjon: inkrementell polish (ikke full redesign), desktop-først med
      grasiøs degradering, bulk-handlinger deaktiveres når ingenting er valgt
    - ✅ Budsjettsiden: seleksjon (avkrysning per kategori/gruppe/alle), avgrenset
-     auto-allokering + bulk-flytt/nullstill, sticky header, badges, polish
+     auto-allokering + bulk-flytt/nullstill, sticky header, badges, tydeligere
+     skille mellom kategorigrupper/kategorier, advarsel om ukategoriserte fra tidligere måneder
+   - ✅ Ukategorisert-håndhevelse: `rta`-kolonne, badge per konto + filter, «Klar til å
+     fordele»-valg, varsel i avstemmingsmodal
+   - ✅ Overføringer: budsjett↔overvåket-kategorisering via `TransferService`, egen
+     «Overføring»-kolonne, alle overføringer låst, overvåkede kontoer uten kategori
+   - ✅ Regel-mål: kategori / RTA / overføring (`RuleTarget`)
 
 ===
 
