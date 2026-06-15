@@ -320,6 +320,14 @@ export default function AccountDetail() {
                                                 {tx.locked && (
                                                     <span title="Låst – beskyttet mot regler">🔒</span>
                                                 )}
+                                                {tx.pending && (
+                                                    <span
+                                                        title="Reservert – ikke bokført i banken ennå"
+                                                        className="rounded bg-amber-50 px-1 py-0.5 text-[10px] font-medium uppercase text-amber-600"
+                                                    >
+                                                        reservert
+                                                    </span>
+                                                )}
                                                 {tx.reconciled_at && (
                                                     <span
                                                         title="Avstemt"

@@ -13,6 +13,7 @@ readonly class NormalizedTransaction
      * @param  string  $date  YYYY-MM-DD
      * @param  float  $amount  Signert: positiv = inn, negativ = ut
      * @param  string  $description  Full info-tekst (matchegrunnlag for regelmotoren)
+     * @param  bool  $booked  true = bokført, false = reservert (PEND)
      * @param  array<string, mixed>  $raw  Rådata fra leverandøren
      */
     public function __construct(
@@ -23,6 +24,7 @@ readonly class NormalizedTransaction
         public string $description,
         public ?string $payee,
         public ?string $memo,
+        public bool $booked = true,
         public array $raw = [],
     ) {}
 }

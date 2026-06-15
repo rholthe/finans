@@ -34,9 +34,19 @@ class BankSyncTest extends TestCase
         $this->app->instance(GoCardlessProvider::class, $this->provider);
     }
 
-    private function tx(string $id, float $amount, string $date = '2026-01-10', string $payee = 'Butikk'): NormalizedTransaction
+    private function tx(string $id, float $amount, string $date = '2026-01-10', string $payee = 'Butikk', bool $booked = true): NormalizedTransaction
     {
-        return new NormalizedTransaction($id, $date, $amount, 'NOK', $payee, $payee, $payee, ['internalTransactionId' => $id]);
+        return new NormalizedTransaction(
+            externalId: $id,
+            date: $date,
+            amount: $amount,
+            currency: 'NOK',
+            description: $payee,
+            payee: $payee,
+            memo: $payee,
+            booked: $booked,
+            raw: ['internalTransactionId' => $id],
+        );
     }
 
     private function linkedAccount(): BankAccount
@@ -144,6 +154,88 @@ class BankSyncTest extends TestCase
 
         $this->assertSame(1, $event->imported_count); // kun tx-2
         $this->assertDatabaseCount('transactions', 2);
+    }
+
+    public function test_reservert_lagres_som_pending_og_ikke_klarert(): void
+    {
+        $bankAccount = $this->linkedAccount();
+        $this->provider->transactions['acc1'] = [
+            $this->tx('booked-1', -300, booked: true),
+            $this->tx('pend-1', -50, booked: false),
+        ];
+
+        $event = $this->sync();
+
+        // Kun bokførte teller som «nye/importerte».
+        $this->assertSame(1, $event->imported_count);
+        $this->assertDatabaseHas('transactions', [
+            'account_id' => $bankAccount->account_id,
+            'external_id' => 'booked-1',
+            'cleared' => true,
+            'pending' => false,
+        ]);
+        $this->assertDatabaseHas('transactions', [
+            'account_id' => $bankAccount->account_id,
+            'external_id' => 'pend-1',
+            'cleared' => false,
+            'pending' => true,
+        ]);
+    }
+
+    public function test_reservert_byttes_ut_naar_den_bokfores(): void
+    {
+        $bankAccount = $this->linkedAccount();
+
+        // Synk 1: posten er reservert (egen, ustabil id).
+        $this->provider->transactions['acc1'] = [$this->tx('pend-tmp', -120, booked: false)];
+        $this->sync();
+        $this->assertDatabaseCount('transactions', 1);
+
+        // Synk 2: banken har bokført den (ny id), ingen reserverte igjen.
+        $this->provider->transactions['acc1'] = [$this->tx('booked-real', -120, booked: true)];
+        $this->sync();
+
+        // Den reserverte raden er borte, kun den bokførte står igjen.
+        $this->assertDatabaseCount('transactions', 1);
+        $this->assertDatabaseMissing('transactions', ['external_id' => 'pend-tmp']);
+        $this->assertDatabaseHas('transactions', [
+            'external_id' => 'booked-real',
+            'cleared' => true,
+            'pending' => false,
+        ]);
+    }
+
+    public function test_reservert_dupliseres_ikke_over_flere_synker(): void
+    {
+        $this->linkedAccount();
+        $this->provider->transactions['acc1'] = [$this->tx('pend-1', -75, booked: false)];
+
+        $this->sync();
+        $this->sync();
+        $this->sync();
+
+        // Reserverte erstattes hver synk – ikke akkumuleres.
+        $this->assertSame(1, Transaction::where('pending', true)->count());
+    }
+
+    public function test_laast_reservert_rad_bevares_ved_synk(): void
+    {
+        $bankAccount = $this->linkedAccount();
+        // En reservert rad brukeren har redigert (locked) skal ikke fjernes.
+        Transaction::create([
+            'account_id' => $bankAccount->account_id,
+            'external_id' => 'pend-locked',
+            'date' => '2026-01-10',
+            'amount' => -200,
+            'cleared' => false,
+            'pending' => true,
+            'locked' => true,
+        ]);
+        $this->provider->transactions['acc1'] = [];
+
+        $this->sync();
+
+        $this->assertDatabaseHas('transactions', ['external_id' => 'pend-locked', 'pending' => true]);
     }
 
     public function test_hopper_over_konto_uten_kobling(): void

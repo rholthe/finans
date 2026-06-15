@@ -110,11 +110,12 @@ class GoCardlessProvider implements BankDataProvider
 
         $mapping = $this->mappingFor($institutionId);
         $booked = $response->json('transactions.booked') ?? [];
+        $pending = $response->json('transactions.pending') ?? [];
 
-        return array_values(array_map(
-            fn (array $raw): NormalizedTransaction => $this->normalize($raw, $mapping),
-            $booked,
-        ));
+        return [
+            ...array_map(fn (array $raw): NormalizedTransaction => $this->normalize($raw, $mapping, true), $booked),
+            ...array_map(fn (array $raw): NormalizedTransaction => $this->normalize($raw, $mapping, false), $pending),
+        ];
     }
 
     public function lastRateLimit(): ?array
@@ -127,7 +128,7 @@ class GoCardlessProvider implements BankDataProvider
      *
      * @param  array<string, mixed>  $raw
      */
-    private function normalize(array $raw, BankMappingInterface $mapping): NormalizedTransaction
+    private function normalize(array $raw, BankMappingInterface $mapping, bool $booked): NormalizedTransaction
     {
         $info = $mapping->infoString($raw);
 
@@ -139,6 +140,7 @@ class GoCardlessProvider implements BankDataProvider
             description: $info,
             payee: Str::limit($info, 255, ''),
             memo: $info,
+            booked: $booked,
             raw: $raw,
         );
     }

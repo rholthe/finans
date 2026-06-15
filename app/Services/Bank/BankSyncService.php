@@ -180,40 +180,69 @@ class BankSyncService
 
         $this->storeRateLimit($provider, $bankAccount);
 
-        $newCount = 0;
+        // Reserverte (PEND) poster mangler stabil external_id og endrer seg
+        // mellom synk-er, så de dedup'es ikke på id. I stedet erstattes kontoens
+        // ulåste reserverte rader med dagens reserverte sett ved hver synk: en
+        // reservert post som er bokført siden sist forsvinner her og kommer inn
+        // igjen som booket nedenfor – altså «oppdatert ved bokføring». Låste
+        // (manuelt redigerte) reserverte rader bevares urørt.
+        Transaction::query()
+            ->where('account_id', $bankAccount->account_id)
+            ->where('pending', true)
+            ->where('locked', false)
+            ->delete();
+
+        $newBooked = 0;
+        $pendingCount = 0;
+
         foreach ($transactions as $transaction) {
-            $key = $bankAccount->account_id.':'.$transaction->externalId;
-            if (isset($seen[$key])) {
-                continue;
+            if ($transaction->booked) {
+                $key = $bankAccount->account_id.':'.$transaction->externalId;
+                if (isset($seen[$key])) {
+                    continue;
+                }
+
+                $this->createFromBank($bankAccount, $transaction, booked: true);
+                $seen[$key] = 1;
+                $this->imported++;
+                $newBooked++;
+            } else {
+                $this->createFromBank($bankAccount, $transaction, booked: false);
+                $pendingCount++;
             }
-
-            $rule = $this->rules->apply($transaction->description, $transaction->amount);
-
-            Transaction::create([
-                'account_id' => $bankAccount->account_id,
-                'category_id' => $rule->categoryId,
-                'external_id' => $transaction->externalId,
-                'bank_description' => $transaction->description,
-                'rule_id' => $rule->ruleId,
-                'date' => $transaction->date,
-                'amount' => $transaction->amount,
-                'payee' => $rule->payee ?? $transaction->payee,
-                'memo' => $rule->memo ?? $transaction->memo,
-                'cleared' => true,
-            ]);
-
-            $seen[$key] = 1;
-            $this->imported++;
-            $newCount++;
         }
 
         $this->line(
-            $newCount > 0 ? 'success' : 'info',
-            __(':count nye transaksjon(er) for konto :iban.', [
-                'count' => $newCount,
+            $newBooked > 0 ? 'success' : 'info',
+            __(':count nye transaksjon(er) for konto :iban (:pending reservert).', [
+                'count' => $newBooked,
+                'pending' => $pendingCount,
                 'iban' => $bankAccount->iban ?? $bankAccount->external_id,
             ])
         );
+    }
+
+    /**
+     * Opprett en transaksjon fra en normalisert bankpost. Bokførte er klarert
+     * (teller i avstemming); reserverte er pending=true / cleared=false.
+     */
+    private function createFromBank(BankAccount $bankAccount, NormalizedTransaction $transaction, bool $booked): void
+    {
+        $rule = $this->rules->apply($transaction->description, $transaction->amount);
+
+        Transaction::create([
+            'account_id' => $bankAccount->account_id,
+            'category_id' => $rule->categoryId,
+            'external_id' => $transaction->externalId,
+            'bank_description' => $transaction->description,
+            'rule_id' => $rule->ruleId,
+            'date' => $transaction->date,
+            'amount' => $transaction->amount,
+            'payee' => $rule->payee ?? $transaction->payee,
+            'memo' => $rule->memo ?? $transaction->memo,
+            'cleared' => $booked,
+            'pending' => ! $booked,
+        ]);
     }
 
     private function storeRateLimit(BankDataProvider $provider, BankAccount $bankAccount): void

@@ -119,13 +119,15 @@ class EnableBankingProvider implements BankDataProvider
     {
         $this->lastRateLimit = null;
 
-        $booked = $this->request('GET', "/accounts/{$accountId}/transactions", [
+        // Uten transaction_status-filter returnerer Enable Banking både bokførte
+        // (BOOK) og reserverte (PEND); status leses per rad i normalize().
+        $entries = $this->request('GET', "/accounts/{$accountId}/transactions", [
             'date_from' => $dateFrom,
         ])->json('transactions') ?? [];
 
         return array_values(array_map(
             fn (array $raw): NormalizedTransaction => $this->normalize($raw),
-            $booked,
+            $entries,
         ));
     }
 
@@ -181,6 +183,7 @@ class EnableBankingProvider implements BankDataProvider
             description: $info,
             payee: Str::limit($info, 255, ''),
             memo: $info,
+            booked: strtoupper((string) ($raw['status'] ?? 'BOOK')) === 'BOOK',
             raw: $raw,
         );
     }

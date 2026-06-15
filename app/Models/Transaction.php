@@ -26,6 +26,7 @@ class Transaction extends Model
         'payee',
         'memo',
         'cleared',
+        'pending',
         'reconciled_at',
         'is_starting_balance',
     ];
@@ -39,6 +40,7 @@ class Transaction extends Model
             'date' => 'date',
             'amount' => 'decimal:2',
             'cleared' => 'boolean',
+            'pending' => 'boolean',
             'reconciled_at' => 'datetime',
             'is_starting_balance' => 'boolean',
             'locked' => 'boolean',

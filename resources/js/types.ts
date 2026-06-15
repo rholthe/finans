@@ -31,6 +31,7 @@ export interface Transaction {
     payee: string | null;
     memo: string | null;
     cleared: boolean;
+    pending: boolean; // reservert bankpost (ikke bokført ennå); byttes ut ved bokføring
     reconciled_at: string | null; // satt når raden er avstemt (null = ikke avstemt)
     is_starting_balance: boolean;
     transfer_id: number | null; // det andre benet i en overføring (null = vanlig transaksjon)
