@@ -96,8 +96,18 @@ Route::prefix('api')->group(function () {
 
 /*
 |--------------------------------------------------------------------------
+| Offentlige juridiske sider (utenfor passord-login og SPA)
+|--------------------------------------------------------------------------
+| Personvern + vilkår må være offentlig tilgjengelige (Enable Banking peker
+| hit i sin prod-app-godkjenning). Frittstående Blade, ingen auth.
+*/
+Route::view('/privacy', 'legal.privacy')->name('legal.privacy');
+Route::view('/terms', 'legal.terms')->name('legal.terms');
+
+/*
+|--------------------------------------------------------------------------
 | SPA – alt annet serveres av React (client-side routing)
 |--------------------------------------------------------------------------
 */
 Route::get('/{any?}', fn () => view('app'))
-    ->where('any', '^(?!api).*$');
+    ->where('any', '^(?!api|privacy|terms).*$');
