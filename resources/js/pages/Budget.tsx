@@ -616,6 +616,23 @@ function CategoryRow({
     );
 }
 
+function SummaryChip({ label, value, tone = 'neutral' }: { label: string; value: number; tone?: 'neutral' | 'available' }) {
+    const valueTone =
+        tone === 'available'
+            ? value < 0
+                ? 'text-red-600'
+                : 'text-green-700'
+            : value < 0
+              ? 'text-neutral-800'
+              : 'text-green-700';
+    return (
+        <div className="flex-1 rounded-xl bg-neutral-50 px-3 py-2 ring-1 ring-neutral-100">
+            <div className="text-[0.65rem] font-medium uppercase tracking-wide text-neutral-400">{label}</div>
+            <div className={`text-sm font-semibold tabular-nums ${valueTone}`}>{formatNok(value)}</div>
+        </div>
+    );
+}
+
 function ActivityModal({
     category,
     month,
@@ -636,20 +653,34 @@ function ActivityModal({
 
     return (
         <Modal title={`${category.name} – ${monthLabel(month)}`} onClose={onClose}>
+            <div className="mb-5 flex gap-2">
+                <SummaryChip label="Tildelt" value={category.assigned} />
+                <SummaryChip label="Aktivitet" value={category.activity} />
+                <SummaryChip label="Tilgjengelig" value={category.available} tone="available" />
+            </div>
+
             {error && <p className="text-sm text-red-600">{error}</p>}
             {!error && !data && <p className="text-sm text-neutral-400">Laster …</p>}
             {data && (
                 <div className="space-y-5">
                     <div>
-                        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                        <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
                             Transaksjoner
+                            <span className="rounded-full bg-neutral-100 px-1.5 py-0.5 text-[0.65rem] font-medium tabular-nums text-neutral-500">
+                                {data.transactions.length}
+                            </span>
                         </h3>
                         {data.transactions.length === 0 ? (
-                            <p className="text-sm text-neutral-400">Ingen transaksjoner denne måneden.</p>
+                            <p className="rounded-xl border border-dashed border-neutral-200 px-3 py-6 text-center text-sm text-neutral-400">
+                                Ingen transaksjoner denne måneden.
+                            </p>
                         ) : (
                             <ul className="divide-y divide-neutral-100">
                                 {data.transactions.map((t) => (
-                                    <li key={t.id} className="flex items-center justify-between gap-3 py-1.5">
+                                    <li
+                                        key={t.id}
+                                        className="-mx-2 flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 hover:bg-neutral-50"
+                                    >
                                         <div className="min-w-0">
                                             <div className="truncate text-sm">{t.payee || '—'}</div>
                                             <div className="text-xs text-neutral-400">
@@ -671,16 +702,19 @@ function ActivityModal({
                     </div>
 
                     {data.scheduled.length > 0 && (
-                        <div>
-                            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                        <div className="rounded-xl bg-blue-50/60 p-3 ring-1 ring-blue-100">
+                            <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-blue-700/80">
                                 Planlagte
+                                <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[0.65rem] font-medium tabular-nums text-blue-700">
+                                    {data.scheduled.length}
+                                </span>
                             </h3>
-                            <ul className="divide-y divide-neutral-100">
+                            <ul className="divide-y divide-blue-100/70">
                                 {data.scheduled.map((s) => (
                                     <li key={s.id} className="flex items-center justify-between gap-3 py-1.5">
                                         <div className="min-w-0">
                                             <div className="truncate text-sm">{s.payee || '—'}</div>
-                                            <div className="text-xs text-neutral-400">
+                                            <div className="text-xs text-neutral-500">
                                                 {FREQUENCY_LABELS[s.frequency]} · {s.account ?? '—'} ·{' '}
                                                 {s.dates.map((d) => formatDate(d)).join(', ')}
                                             </div>
@@ -700,6 +734,71 @@ function ActivityModal({
                 </div>
             )}
         </Modal>
+    );
+}
+
+function categoryName(groups: BudgetGroup[], id: string): string | null {
+    if (!id) {
+        return null;
+    }
+    for (const group of groups) {
+        const found = group.categories.find((c) => String(c.id) === id);
+        if (found) {
+            return found.name;
+        }
+    }
+    return null;
+}
+
+/** Viser «fra → til»-flyten i flytte-modalene. */
+function MoveFlow({
+    fromLabel,
+    fromAmount,
+    toLabel,
+}: {
+    fromLabel: string;
+    fromAmount: number;
+    toLabel: string | null;
+}) {
+    return (
+        <div className="flex items-stretch gap-2">
+            <div className="min-w-0 flex-1 rounded-xl bg-neutral-50 px-3 py-2 ring-1 ring-neutral-100">
+                <div className="text-[0.65rem] font-medium uppercase tracking-wide text-neutral-400">Fra</div>
+                <div className="truncate text-sm font-medium text-neutral-800">{fromLabel}</div>
+                <div className="text-xs tabular-nums text-neutral-400">{formatNok(fromAmount)} tilgjengelig</div>
+            </div>
+            <div className="flex items-center text-neutral-300" aria-hidden>
+                →
+            </div>
+            <div className="min-w-0 flex-1 rounded-xl bg-neutral-50 px-3 py-2 ring-1 ring-neutral-100">
+                <div className="text-[0.65rem] font-medium uppercase tracking-wide text-neutral-400">Til</div>
+                <div className={`truncate text-sm font-medium ${toLabel ? 'text-neutral-800' : 'text-neutral-300'}`}>
+                    {toLabel ?? 'Velg kategori …'}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function MoveFooterButtons({ busy, onClose }: { busy: boolean; onClose: () => void }) {
+    return (
+        <>
+            <button
+                type="button"
+                onClick={onClose}
+                className="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-500 hover:bg-neutral-100"
+            >
+                Avbryt
+            </button>
+            <button
+                type="submit"
+                form="move-form"
+                disabled={busy}
+                className="rounded-lg bg-neutral-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+            >
+                Flytt
+            </button>
+        </>
     );
 }
 
@@ -748,28 +847,47 @@ function MoveModal({
     }
 
     return (
-        <Modal title={`Flytt fra ${category.name}`} onClose={onClose}>
+        <Modal
+            title={`Flytt fra ${category.name}`}
+            size="md"
+            onClose={onClose}
+            footer={max > 0 ? <MoveFooterButtons busy={busy} onClose={onClose} /> : undefined}
+        >
             {max <= 0 ? (
                 <p className="text-sm text-neutral-500">
                     Det er ingen tilgjengelige penger å flytte fra denne kategorien.
                 </p>
             ) : (
-                <form onSubmit={submit} className="space-y-3">
-                    <p className="text-sm text-neutral-500">
-                        Tilgjengelig: <span className="font-medium tabular-nums">{formatNok(max)}</span>
-                    </p>
+                <form id="move-form" onSubmit={submit} className="space-y-4">
+                    <MoveFlow
+                        fromLabel={category.name}
+                        fromAmount={max}
+                        toLabel={categoryName(allGroups, target)}
+                    />
                     <label className="block text-xs font-medium text-neutral-600">
                         Beløp
-                        <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            max={max}
-                            value={amount}
-                            onChange={(e) => setAmount(e.target.value)}
-                            autoFocus
-                            className="mt-1 block w-40 rounded-lg border border-neutral-300 px-2 py-1.5 text-right text-sm focus:border-neutral-900 focus:outline-none"
-                        />
+                        <div className="relative mt-1 w-40">
+                            <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-sm text-neutral-400">
+                                kr
+                            </span>
+                            <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                max={max}
+                                value={amount}
+                                onChange={(e) => setAmount(e.target.value)}
+                                autoFocus
+                                className="block w-full rounded-lg border border-neutral-300 py-1.5 pl-8 pr-14 text-right text-sm tabular-nums focus:border-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-200"
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setAmount(String(max))}
+                                className="absolute inset-y-0 right-0 my-1 mr-1 rounded px-1.5 text-xs font-medium text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+                            >
+                                Maks
+                            </button>
+                        </div>
                     </label>
                     <label className="block text-xs font-medium text-neutral-600">
                         Til kategori
@@ -782,23 +900,6 @@ function MoveModal({
                     </label>
 
                     {error && <p className="text-sm text-red-600">{error}</p>}
-
-                    <div className="flex gap-2 pt-1">
-                        <button
-                            type="submit"
-                            disabled={busy}
-                            className="rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
-                        >
-                            Flytt
-                        </button>
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            className="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-500 hover:bg-neutral-100"
-                        >
-                            Avbryt
-                        </button>
-                    </div>
                 </form>
             )}
         </Modal>
@@ -818,7 +919,8 @@ function BulkMoveModal({
     onMoved: (budget: BudgetMonth) => void;
     onClose: () => void;
 }) {
-    const total = sources.reduce((s, c) => s + Math.max(0, c.available), 0);
+    const contributing = sources.filter((c) => c.available > 0);
+    const total = contributing.reduce((s, c) => s + c.available, 0);
     const [target, setTarget] = useState('');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -841,18 +943,46 @@ function BulkMoveModal({
     }
 
     return (
-        <Modal title={`Flytt fra ${sources.length} kategorier`} onClose={onClose}>
+        <Modal
+            title={`Flytt fra ${sources.length} kategorier`}
+            size="md"
+            onClose={onClose}
+            footer={total > 0 ? <MoveFooterButtons busy={busy} onClose={onClose} /> : undefined}
+        >
             {total <= 0 ? (
                 <p className="text-sm text-neutral-500">
                     Ingen av de valgte kategoriene har tilgjengelige penger å flytte.
                 </p>
             ) : (
-                <form onSubmit={submit} className="space-y-3">
-                    <p className="text-sm text-neutral-500">
-                        Alt tilgjengelig fra de valgte kategoriene (totalt{' '}
-                        <span className="font-medium tabular-nums">{formatNok(total)}</span>) flyttes til
-                        målkategorien. Valgte kategorier uten tilgjengelig hoppes over.
-                    </p>
+                <form id="move-form" onSubmit={submit} className="space-y-4">
+                    <MoveFlow
+                        fromLabel={`${contributing.length} kategorier`}
+                        fromAmount={total}
+                        toLabel={categoryName(allGroups, target)}
+                    />
+                    <div>
+                        <div className="mb-1 text-xs font-medium text-neutral-600">Flyttes fra</div>
+                        <ul className="max-h-40 divide-y divide-neutral-100 overflow-y-auto rounded-lg ring-1 ring-neutral-100">
+                            {contributing.map((c) => (
+                                <li
+                                    key={c.id}
+                                    className="flex items-center justify-between gap-3 px-3 py-1.5 text-sm"
+                                >
+                                    <span className="truncate text-neutral-700">{c.name}</span>
+                                    <span className="shrink-0 tabular-nums text-neutral-500">
+                                        {formatNok(c.available)}
+                                    </span>
+                                </li>
+                            ))}
+                        </ul>
+                        {contributing.length < sources.length && (
+                            <p className="mt-1 text-xs text-neutral-400">
+                                {sources.length - contributing.length} valgt
+                                {sources.length - contributing.length === 1 ? ' kategori' : 'e kategorier'} uten
+                                tilgjengelig hoppes over.
+                            </p>
+                        )}
+                    </div>
                     <label className="block text-xs font-medium text-neutral-600">
                         Til kategori
                         <CategorySelect
@@ -864,23 +994,6 @@ function BulkMoveModal({
                     </label>
 
                     {error && <p className="text-sm text-red-600">{error}</p>}
-
-                    <div className="flex gap-2 pt-1">
-                        <button
-                            type="submit"
-                            disabled={busy}
-                            className="rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
-                        >
-                            Flytt
-                        </button>
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            className="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-500 hover:bg-neutral-100"
-                        >
-                            Avbryt
-                        </button>
-                    </div>
                 </form>
             )}
         </Modal>
@@ -1048,6 +1161,87 @@ function GoalForm({
     );
 }
 
+/**
+ * Evaluerer et enkelt regneuttrykk (+ − * / og parenteser) så tildelt-feltet kan
+ * brukes som kalkulator, f.eks. «500+200». Komma tolkes som desimaltegn.
+ * Returnerer null ved ugyldig uttrykk (ingen `eval` – egen rekursiv parser).
+ */
+function evalExpression(input: string): number | null {
+    const s = input.replace(/,/g, '.').replace(/\s+/g, '');
+    if (s === '') {
+        return null;
+    }
+    let pos = 0;
+
+    const parseNumber = (): number | null => {
+        const start = pos;
+        while (pos < s.length && /[0-9.]/.test(s[pos])) {
+            pos++;
+        }
+        if (pos === start) {
+            return null;
+        }
+        const n = Number(s.slice(start, pos));
+        return Number.isFinite(n) ? n : null;
+    };
+
+    const parseFactor = (): number | null => {
+        if (s[pos] === '+' || s[pos] === '-') {
+            const op = s[pos++];
+            const v = parseFactor();
+            return v === null ? null : op === '-' ? -v : v;
+        }
+        if (s[pos] === '(') {
+            pos++;
+            const v = parseExpr();
+            if (v === null || s[pos] !== ')') {
+                return null;
+            }
+            pos++;
+            return v;
+        }
+        return parseNumber();
+    };
+
+    const parseTerm = (): number | null => {
+        let value = parseFactor();
+        if (value === null) {
+            return null;
+        }
+        while (s[pos] === '*' || s[pos] === '/') {
+            const op = s[pos++];
+            const rhs = parseFactor();
+            if (rhs === null) {
+                return null;
+            }
+            value = op === '*' ? value * rhs : value / rhs;
+        }
+        return value;
+    };
+
+    function parseExpr(): number | null {
+        let value = parseTerm();
+        if (value === null) {
+            return null;
+        }
+        while (s[pos] === '+' || s[pos] === '-') {
+            const op = s[pos++];
+            const rhs = parseTerm();
+            if (rhs === null) {
+                return null;
+            }
+            value = op === '+' ? value + rhs : value - rhs;
+        }
+        return value;
+    }
+
+    const result = parseExpr();
+    if (result === null || pos !== s.length || !Number.isFinite(result)) {
+        return null;
+    }
+    return Math.round(result * 100) / 100;
+}
+
 function AssignedInput({
     category,
     month,
@@ -1057,19 +1251,27 @@ function AssignedInput({
     month: string;
     onChange: (budget: BudgetMonth) => void;
 }) {
-    const [value, setValue] = useState(String(category.assigned));
+    // Desimaltegn vises som komma (som øvrige tallkolonner); evalExpression tolker komma.
+    const display = (n: number) => String(n).replace('.', ',');
+    const [value, setValue] = useState(display(category.assigned));
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(false);
 
     // Synk når data lastes på nytt (f.eks. ved månedsbytte eller etter lagring).
     useEffect(() => {
-        setValue(String(category.assigned));
+        setValue(display(category.assigned));
     }, [category.assigned, month]);
 
     async function commit() {
-        const amount = Number(value);
-        if (Number.isNaN(amount) || amount === category.assigned) {
-            setValue(String(category.assigned));
+        const amount = evalExpression(value);
+        if (amount === null) {
+            setError(true);
+            setValue(display(category.assigned));
+            return;
+        }
+        if (amount === category.assigned) {
+            setValue(display(amount));
+            setError(false);
             return;
         }
         setSaving(true);
@@ -1087,12 +1289,18 @@ function AssignedInput({
 
     return (
         <input
-            type="number"
-            step="0.01"
-            inputMode="decimal"
+            type="text"
+            inputMode="text"
             value={value}
             disabled={saving}
-            onChange={(e) => setValue(e.target.value)}
+            title="Du kan skrive et regnestykke, f.eks. 500+200"
+            onChange={(e) => {
+                setValue(e.target.value);
+                if (error) {
+                    setError(false);
+                }
+            }}
+            onFocus={(e) => e.currentTarget.select()}
             onBlur={commit}
             onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
             className={`w-full rounded-lg border px-2 py-1 text-right text-sm tabular-nums focus:outline-none ${
