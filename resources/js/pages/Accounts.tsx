@@ -66,11 +66,11 @@ export default function Accounts() {
             </div>
 
             {!loading && accounts.length > 0 && (
-                <div className="mt-4 rounded-2xl bg-gradient-to-br from-neutral-900 to-neutral-700 p-6 text-white shadow-sm">
-                    <div className="text-sm font-medium text-white/70">Nettoformue</div>
+                <div className="mt-4 rounded-2xl bg-gradient-to-br from-emerald-50 via-white to-sky-50 p-6 shadow-sm ring-1 ring-neutral-200">
+                    <div className="text-sm font-medium text-neutral-500">Nettoformue</div>
                     <div
                         className={`mt-0.5 text-3xl font-semibold tabular-nums ${
-                            netWorth < 0 ? 'text-red-300' : 'text-white'
+                            netWorth < 0 ? 'text-red-600' : 'text-neutral-900'
                         }`}
                     >
                         {formatNok(netWorth)}
@@ -78,14 +78,18 @@ export default function Accounts() {
                     <div className="mt-4 flex flex-wrap gap-x-8 gap-y-2 text-sm">
                         <div className="flex items-center gap-2">
                             <span aria-hidden>{ACCENTS.budget.icon}</span>
-                            <span className="text-white/70">Budsjettkontoer</span>
-                            <span className="font-medium tabular-nums">{formatNok(budgetTotal)}</span>
+                            <span className="text-neutral-500">Budsjettkontoer</span>
+                            <span className="font-medium tabular-nums text-neutral-800">
+                                {formatNok(budgetTotal)}
+                            </span>
                         </div>
                         {tracking.length > 0 && (
                             <div className="flex items-center gap-2">
                                 <span aria-hidden>{ACCENTS.tracking.icon}</span>
-                                <span className="text-white/70">Overvåket</span>
-                                <span className="font-medium tabular-nums">{formatNok(trackingTotal)}</span>
+                                <span className="text-neutral-500">Overvåket</span>
+                                <span className="font-medium tabular-nums text-neutral-800">
+                                    {formatNok(trackingTotal)}
+                                </span>
                             </div>
                         )}
                     </div>
