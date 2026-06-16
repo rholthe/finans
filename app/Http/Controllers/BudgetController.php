@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Category;
 use App\Models\ScheduledTransaction;
 use App\Models\Transaction;
+use App\Models\TransactionSplit;
 use App\Services\BudgetService;
 use App\Services\GoalService;
 use Carbon\CarbonImmutable;
@@ -120,13 +121,12 @@ class BudgetController extends Controller
         $start = CarbonImmutable::parse($month)->startOfMonth();
         $end = $start->endOfMonth();
 
-        $transactions = Transaction::query()
+        // Direkte kategoriserte (ikke-splittede) transaksjoner.
+        $direct = Transaction::query()
             ->with('account:id,name')
             ->where('category_id', $category->id)
             ->whereHas('account', fn ($q) => $q->where('on_budget', true))
             ->whereBetween('date', [$start->toDateString(), $end->toDateString()])
-            ->orderByDesc('date')
-            ->orderByDesc('id')
             ->get()
             ->map(fn (Transaction $t): array => [
                 'id' => $t->id,
@@ -135,7 +135,29 @@ class BudgetController extends Controller
                 'payee' => $t->payee,
                 'memo' => $t->memo,
                 'account' => $t->account?->name,
-            ])
+            ]);
+
+        // Splittlinjer i denne kategorien – vis forelderens mottaker/dato/konto,
+        // men splittens beløp og evt. notat.
+        $splits = TransactionSplit::query()
+            ->with('transaction.account:id,name')
+            ->where('category_id', $category->id)
+            ->whereHas('transaction', fn ($q) => $q
+                ->whereHas('account', fn ($a) => $a->where('on_budget', true))
+                ->whereBetween('date', [$start->toDateString(), $end->toDateString()]))
+            ->get()
+            ->map(fn (TransactionSplit $s): array => [
+                'id' => $s->transaction_id,
+                'date' => $s->transaction->date->toDateString(),
+                'amount' => round((float) $s->amount, 2),
+                'payee' => $s->transaction->payee,
+                'memo' => $s->memo ?? $s->transaction->memo,
+                'account' => $s->transaction->account?->name,
+            ]);
+
+        $transactions = $direct->concat($splits)
+            ->sortByDesc('date')
+            ->values()
             ->all();
 
         $scheduled = ScheduledTransaction::query()

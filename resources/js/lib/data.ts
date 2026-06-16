@@ -138,6 +138,12 @@ export async function applyRulesToTransactions(ids: number[]): Promise<number> {
     return res.data.updated;
 }
 
+export interface TransactionSplitInput {
+    category_id: number;
+    amount: number; // signert, samme fortegn som transaksjonen
+    memo?: string | null;
+}
+
 export interface NewTransaction {
     date: string;
     amount: number;
@@ -146,6 +152,8 @@ export interface NewTransaction {
     memo?: string;
     cleared?: boolean;
     rta?: boolean; // bevisst plassert i «Klar til å fordele»
+    // Fordel beløpet på flere kategorier. Tom liste fjerner en eksisterende splitt.
+    splits?: TransactionSplitInput[];
 }
 
 export async function createTransaction(

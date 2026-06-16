@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class TransactionController extends Controller
 {
@@ -28,7 +29,7 @@ class TransactionController extends Controller
         ]);
 
         $transactions = $account->transactions()
-            ->with('transfer.account')
+            ->with(['transfer.account', 'splits'])
             ->when($validated['from'] ?? null, fn ($q, $from) => $q->whereDate('date', '>=', $from))
             ->when($validated['to'] ?? null, fn ($q, $to) => $q->whereDate('date', '<=', $to))
             ->when($validated['uncategorized'] ?? false, fn ($q) => $q->needsCategorization())
@@ -55,40 +56,110 @@ class TransactionController extends Controller
     {
         // Overføringer er to sammenkoblede ben; beløp/dato/kategori kan ikke endres
         // (det ville desynke paret). Men hvert ben må kunne klareres uavhengig –
-        // de posteres på hver sin konto til ulik tid – så `cleared` tillates.
+        // de posteres på hver sin konto til ulik tid – så `cleared` tillates. I
+        // tillegg kan det kategoriserte benet (budsjett→overvåket) splittes, siden
+        // det må kategoriseres; øvrige overføringsben kan ikke endres.
         if ($transaction->transfer_id !== null) {
-            if (collect($request->keys())->diff(['cleared'])->isNotEmpty()) {
+            $splittable = $transaction->category_id !== null || $transaction->is_split;
+            $allowed = $splittable ? ['cleared', 'splits'] : ['cleared'];
+            if (collect($request->keys())->diff($allowed)->isNotEmpty()) {
                 return response()->json(
                     ['message' => 'Overføringer kan ikke redigeres – slett og opprett på nytt.'],
                     422,
                 );
             }
-
-            $validated = $request->validate(['cleared' => ['required', 'boolean']]);
-            $transaction->update($validated);
-
-            return TransactionResource::make($transaction);
         }
 
         $validated = $this->validatePayload($request, partial: true);
+        $splitsProvided = array_key_exists('splits', $validated);
+        $splits = $validated['splits'] ?? [];
+        unset($validated['splits']);
 
-        // RTA og en konkret kategori utelukker hverandre: «Klar til å fordele»
-        // betyr ukategorisert + rta=true; en konkret kategori nullstiller rta.
-        if (($validated['rta'] ?? false) === true) {
-            $validated['category_id'] = null;
-        } elseif (! empty($validated['category_id'])) {
-            $validated['rta'] = false;
+        return DB::transaction(function () use ($request, $transaction, $validated, $splitsProvided, $splits) {
+            // RTA og en konkret kategori utelukker hverandre: «Klar til å fordele»
+            // betyr ukategorisert + rta=true; en konkret kategori nullstiller rta.
+            if (! $splitsProvided) {
+                if (($validated['rta'] ?? false) === true) {
+                    $validated['category_id'] = null;
+                } elseif (! empty($validated['category_id'])) {
+                    $validated['rta'] = false;
+                }
+
+                // En konkret kategori/RTA på en tidligere splittet rad fjerner splittene.
+                if ($transaction->is_split && ($request->has('category_id') || ($validated['rta'] ?? false))) {
+                    $transaction->splits()->delete();
+                    $validated['is_split'] = false;
+                }
+            }
+
+            // En manuell endring av regelstyrte felter (inkl. RTA/splitt) låser raden,
+            // slik at regelmotoren aldri overskriver den senere.
+            if ($request->hasAny(['payee', 'memo', 'category_id', 'rta', 'splits'])) {
+                $validated['locked'] = true;
+            }
+
+            $transaction->update($validated);
+
+            if ($splitsProvided) {
+                $this->syncSplits($transaction->refresh(), $splits);
+            }
+
+            return TransactionResource::make($transaction->load('splits'));
+        });
+    }
+
+    /**
+     * Skriv splittlinjene for en transaksjon. Tom liste fjerner splitten. Ellers
+     * må linjene ha minst to oppføringer, samme fortegn som beløpet, og summere
+     * nøyaktig til transaksjonsbeløpet – pengeraden selv er uendret.
+     *
+     * @param  list<array{category_id: int, amount: float|int|string, memo?: string|null}>  $splits
+     *
+     * @throws ValidationException
+     */
+    private function syncSplits(Transaction $transaction, array $splits): void
+    {
+        if ($splits === []) {
+            $transaction->splits()->delete();
+            $transaction->update(['is_split' => false]);
+
+            return;
         }
 
-        // En manuell endring av regelstyrte felter (inkl. aktivt RTA-valg) låser
-        // raden, slik at regelmotoren aldri overskriver den senere.
-        if ($request->hasAny(['payee', 'memo', 'category_id', 'rta'])) {
-            $validated['locked'] = true;
+        if (count($splits) < 2) {
+            throw ValidationException::withMessages(['splits' => 'En splitt må ha minst to linjer.']);
         }
 
-        $transaction->update($validated);
+        $total = round((float) $transaction->amount, 2);
+        $sign = $total <=> 0;
+        $sum = 0.0;
 
-        return TransactionResource::make($transaction);
+        foreach ($splits as $line) {
+            $amount = round((float) $line['amount'], 2);
+            if ($amount === 0.0 || ($amount <=> 0) !== $sign) {
+                throw ValidationException::withMessages([
+                    'splits' => 'Hver splittlinje må ha samme fortegn som transaksjonsbeløpet.',
+                ]);
+            }
+            $sum += $amount;
+        }
+
+        if (abs(round($sum - $total, 2)) > 0.001) {
+            throw ValidationException::withMessages([
+                'splits' => 'Summen av splittene må være lik transaksjonsbeløpet.',
+            ]);
+        }
+
+        $transaction->splits()->delete();
+        foreach ($splits as $line) {
+            $transaction->splits()->create([
+                'category_id' => $line['category_id'],
+                'amount' => round((float) $line['amount'], 2),
+                'memo' => $line['memo'] ?? null,
+            ]);
+        }
+
+        $transaction->update(['category_id' => null, 'is_split' => true, 'rta' => false]);
     }
 
     public function destroy(Transaction $transaction): JsonResponse
@@ -134,6 +205,12 @@ class TransactionController extends Controller
             'cleared' => ['sometimes', 'boolean'],
             'locked' => ['sometimes', 'boolean'],
             'rta' => ['sometimes', 'boolean'],
+            // Splitt på flere kategorier: tom liste fjerner splitten (sum/fortegn
+            // valideres i syncSplits siden de avhenger av transaksjonsbeløpet).
+            'splits' => ['sometimes', 'array'],
+            'splits.*.category_id' => ['required', Rule::exists('categories', 'id')],
+            'splits.*.amount' => ['required', 'numeric'],
+            'splits.*.memo' => ['nullable', 'string'],
         ]);
     }
 }

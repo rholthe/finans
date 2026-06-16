@@ -218,9 +218,9 @@ class BudgetService
             ->where('month', '<=', $start->toDateString())
             ->sum('assigned');
 
-        $activity = (float) Transaction::query()
+        $activity = (float) Transaction::categoryActivity()
+            ->where('on_budget', true)
             ->where('category_id', $category->id)
-            ->whereHas('account', fn ($q) => $q->where('on_budget', true))
             ->where('date', '<=', $end->toDateString())
             ->sum('amount');
 
@@ -332,6 +332,7 @@ class BudgetService
         $inBudget = (float) Transaction::query()
             ->whereHas('account', fn ($q) => $q->where('on_budget', true))
             ->whereNull('category_id')
+            ->where('is_split', false)
             ->where('date', '<=', $end->toDateString())
             ->sum('amount');
 
@@ -367,9 +368,8 @@ class BudgetService
      */
     private function activityByCategory(?CarbonImmutable $from = null, ?CarbonImmutable $to = null): Collection
     {
-        return Transaction::query()
-            ->whereNotNull('category_id')
-            ->whereHas('account', fn ($q) => $q->where('on_budget', true))
+        return Transaction::categoryActivity()
+            ->where('on_budget', true)
             ->when($from, fn ($q) => $q->where('date', '>=', $from->toDateString()))
             ->when($to, fn ($q) => $q->where('date', '<=', $to->toDateString()))
             ->groupBy('category_id')

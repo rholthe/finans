@@ -103,6 +103,15 @@ Banking for prod-app-godkjenning.
   på kontosiden, og et ikke-blokkerende advarsel-banner på budsjettsiden når tidligere måneder har
   ukategoriserte. «Klar til å fordele (RTA)» er et eksplisitt valg i kategori-nedtrekkene.
   Overvåkede (ikke-budsjett) kontoer har aldri kategori – kolonnen viser «ikke behov».
+- **Splitt på flere kategorier:** en transaksjon kan fordeles på flere kategorier via
+  `transaction_splits` (`category_id` + signert `amount` + memo). **Pengeraden forblir én rad** i
+  `transactions` (saldo/avstemming/RTA-identitet uberørt); splitt-forelderen får `category_id=null`
+  og `is_split=true`. Σ splittbeløp må være lik transaksjonsbeløpet med samme fortegn (min. 2
+  linjer), valideres i `TransactionController::syncSplits`. Kun manuelt (etter postering) – regler,
+  planlagte og banksynk lager aldri splitter. Kategori-aktivitet (budsjett + rapporter) leses fra
+  `Transaction::categoryActivity()` (UNION av direkte kategoriserte rader + splittlinjer), så splitter
+  telles uten dobbelttelling; splitt-foreldre ekskluderes fra ukategorisert/RTA/inntekt (`is_split`).
+  Overføringer kan splittes **kun** på det kategoriserte budsjett→overvåket-benet; øvrige ben røres ikke.
 - **Bokført vs reservert:** banksynk henter både bokførte og reserverte (`NormalizedTransaction.
   booked`). Reservert = `pending=true`/`cleared=false` (teller i activity, ikke i avstemming).
   Bokførte dedup'es på `external_id`; reserverte mangler stabil id, så kontoens ulåste reserverte

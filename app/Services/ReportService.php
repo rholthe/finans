@@ -28,9 +28,8 @@ class ReportService
     {
         [$start, $end] = $this->range($from, $to);
 
-        $totals = Transaction::query()
-            ->whereNotNull('category_id')
-            ->whereHas('account', fn ($q) => $q->where('on_budget', true))
+        $totals = Transaction::categoryActivity()
+            ->where('on_budget', true)
             ->whereBetween('date', [$start->toDateString(), $end->toDateString()])
             ->where('amount', '<', 0)
             ->groupBy('category_id')
@@ -87,6 +86,7 @@ class ReportService
 
         $income = Transaction::query()
             ->whereNull('category_id')
+            ->where('is_split', false)
             ->whereNull('transfer_id')
             ->where('is_starting_balance', false)
             ->whereHas('account', fn ($q) => $q->where('on_budget', true))
@@ -96,9 +96,8 @@ class ReportService
             ->groupBy('ym')
             ->pluck('total', 'ym');
 
-        $expense = Transaction::query()
-            ->whereNotNull('category_id')
-            ->whereHas('account', fn ($q) => $q->where('on_budget', true))
+        $expense = Transaction::categoryActivity()
+            ->where('on_budget', true)
             ->whereBetween('date', [$start->toDateString(), $end->toDateString()])
             ->where('amount', '<', 0)
             ->selectRaw($this->monthExpr().' as ym, SUM(amount) as total')
@@ -129,9 +128,9 @@ class ReportService
     {
         [$start, $end] = $this->range($from, $to);
 
-        $byMonth = Transaction::query()
+        $byMonth = Transaction::categoryActivity()
+            ->where('on_budget', true)
             ->where('category_id', $category->id)
-            ->whereHas('account', fn ($q) => $q->where('on_budget', true))
             ->whereBetween('date', [$start->toDateString(), $end->toDateString()])
             ->where('amount', '<', 0)
             ->selectRaw($this->monthExpr().' as ym, SUM(amount) as total')

@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import {
+    useCallback,
+    useEffect,
+    useMemo,
+    useState,
+    type Dispatch,
+    type FormEvent,
+    type SetStateAction,
+} from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import Layout from '@/components/Layout';
 import Modal from '@/components/Modal';
@@ -374,6 +382,18 @@ export default function AccountDetail() {
                                         <td className="px-4 py-2 text-neutral-500">
                                             {!account.on_budget ? (
                                                 <span className="italic text-neutral-400">ikke behov</span>
+                                            ) : tx.is_split ? (
+                                                <span
+                                                    title={(tx.splits ?? [])
+                                                        .map(
+                                                            (s) =>
+                                                                `${categoryName.get(s.category_id) ?? '—'}: ${formatNok(s.amount)}`,
+                                                        )
+                                                        .join('\n')}
+                                                    className="rounded-full bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700"
+                                                >
+                                                    Delt ({tx.splits?.length ?? 0})
+                                                </span>
                                             ) : tx.category_id ? (
                                                 categoryName.get(tx.category_id) ?? '—'
                                             ) : tx.rta ? (
@@ -423,6 +443,16 @@ export default function AccountDetail() {
                                                     Rediger
                                                 </button>
                                             )}
+                                            {tx.transfer_id &&
+                                                account.on_budget &&
+                                                (tx.category_id !== null || tx.is_split) && (
+                                                    <button
+                                                        onClick={() => startEdit(tx)}
+                                                        className="ml-3 text-xs text-neutral-400 hover:text-neutral-900"
+                                                    >
+                                                        {tx.is_split ? 'Rediger splitt' : 'Splitt'}
+                                                    </button>
+                                                )}
                                             <button
                                                 onClick={() => remove(tx)}
                                                 className="ml-3 text-xs text-neutral-400 hover:text-red-600"
@@ -926,6 +956,91 @@ function NewTransactionForm({
     );
 }
 
+type SplitLine = { category_id: string; amount: string };
+
+const parseAmount = (s: string): number => Number(s.replace(',', '.'));
+
+function CategoryOptions({ groups }: { groups: CategoryGroup[] }) {
+    return (
+        <>
+            {groups.map((group) => (
+                <optgroup key={group.id} label={group.name}>
+                    {group.categories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                            {category.name}
+                        </option>
+                    ))}
+                </optgroup>
+            ))}
+        </>
+    );
+}
+
+/** Linje-editor for å fordele et beløp på flere kategorier. */
+function SplitEditor({
+    lines,
+    setLines,
+    groups,
+    target,
+    rest,
+}: {
+    lines: SplitLine[];
+    setLines: Dispatch<SetStateAction<SplitLine[]>>;
+    groups: CategoryGroup[];
+    target: number;
+    rest: number;
+}) {
+    const balanced = Math.abs(rest) < 0.005;
+    return (
+        <div className="w-full space-y-2 rounded-lg bg-neutral-50 p-3 ring-1 ring-neutral-100">
+            {lines.map((line, i) => (
+                <div key={i} className="flex items-center gap-2">
+                    <select
+                        value={line.category_id}
+                        onChange={(e) =>
+                            setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, category_id: e.target.value } : l)))
+                        }
+                        className="min-w-0 flex-1 rounded-lg border border-neutral-300 px-2 py-1.5 text-sm focus:border-neutral-900 focus:outline-none"
+                    >
+                        <option value="">Velg kategori …</option>
+                        <CategoryOptions groups={groups} />
+                    </select>
+                    <input
+                        value={line.amount}
+                        inputMode="decimal"
+                        placeholder="0"
+                        onChange={(e) =>
+                            setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, amount: e.target.value } : l)))
+                        }
+                        className="w-28 rounded-lg border border-neutral-300 px-2 py-1.5 text-right text-sm tabular-nums focus:border-neutral-900 focus:outline-none"
+                    />
+                    <button
+                        type="button"
+                        onClick={() => setLines((ls) => ls.filter((_, idx) => idx !== i))}
+                        disabled={lines.length <= 2}
+                        title="Fjern linje"
+                        className="rounded px-1.5 py-1 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700 disabled:opacity-30"
+                    >
+                        ✕
+                    </button>
+                </div>
+            ))}
+            <div className="flex items-center justify-between pt-1">
+                <button
+                    type="button"
+                    onClick={() => setLines((ls) => [...ls, { category_id: '', amount: '' }])}
+                    className="text-xs font-medium text-neutral-500 hover:text-neutral-900"
+                >
+                    + Legg til linje
+                </button>
+                <span className={`text-xs tabular-nums ${balanced ? 'text-green-600' : 'text-amber-600'}`}>
+                    Fordelt {formatNok(target - rest)} / {formatNok(target)} · Rest {formatNok(rest)}
+                </span>
+            </div>
+        </div>
+    );
+}
+
 function EditTransactionForm({
     tx,
     groups,
@@ -939,6 +1054,7 @@ function EditTransactionForm({
     onSaved: () => void;
     onCancel: () => void;
 }) {
+    const isTransfer = tx.transfer_id !== null;
     const [date, setDate] = useState(tx.date);
     const [payee, setPayee] = useState(tx.payee ?? '');
     const [memo, setMemo] = useState(tx.memo ?? '');
@@ -946,121 +1062,231 @@ function EditTransactionForm({
     const [amount, setAmount] = useState(String(Math.abs(tx.amount)));
     // 'rta' = Klar til å fordele, '' = ukategorisert, ellers kategori-id.
     const [placement, setPlacement] = useState(tx.rta ? 'rta' : String(tx.category_id ?? ''));
+    const [mode, setMode] = useState<'single' | 'split'>(tx.is_split ? 'split' : 'single');
+    const [lines, setLines] = useState<SplitLine[]>(
+        tx.is_split && tx.splits?.length
+            ? tx.splits.map((s) => ({ category_id: String(s.category_id), amount: String(Math.abs(s.amount)) }))
+            : [
+                  { category_id: '', amount: '' },
+                  { category_id: '', amount: '' },
+              ],
+    );
     const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    // Overføringsben kan kun splittes (beløp/dato/mottaker styres av paret).
+    const sign = isTransfer ? (tx.amount < 0 ? -1 : 1) : direction === 'out' ? -1 : 1;
+    const target = isTransfer ? Math.abs(tx.amount) : Math.abs(parseAmount(amount) || 0);
+    const splitSum = lines.reduce((s, l) => s + (parseAmount(l.amount) || 0), 0);
+    const rest = Math.round((target - splitSum) * 100) / 100;
 
     async function submit(e: FormEvent) {
         e.preventDefault();
-        const magnitude = Math.abs(Number(amount));
+        setError(null);
+
+        if (mode === 'split') {
+            const valid = lines.filter((l) => l.category_id && parseAmount(l.amount) > 0);
+            if (valid.length < 2) {
+                setError('En splitt må ha minst to linjer med kategori og beløp.');
+                return;
+            }
+            if (Math.abs(rest) > 0.005) {
+                setError('Summen av splittene må være lik beløpet.');
+                return;
+            }
+            setBusy(true);
+            try {
+                await updateTransaction(tx.id, {
+                    ...(isTransfer
+                        ? {}
+                        : {
+                              date,
+                              amount: sign * target,
+                              payee: payee || undefined,
+                              memo: memo || undefined,
+                          }),
+                    splits: valid.map((l) => ({
+                        category_id: Number(l.category_id),
+                        amount: sign * parseAmount(l.amount),
+                    })),
+                });
+                onSaved();
+            } catch (err) {
+                setError(apiErrorMessage(err, 'Kunne ikke lagre.'));
+                setBusy(false);
+            }
+            return;
+        }
+
+        // Enkel kategori. En sendt kategori/RTA fjerner en evt. tidligere splitt (backend).
+        const magnitude = Math.abs(parseAmount(amount));
         const rta = placement === 'rta';
         setBusy(true);
-        // Manuell redigering låser raden automatisk (backend). På overvåkede
-        // kontoer er kategori aldri relevant – da sender vi ikke kategori/RTA.
-        await updateTransaction(tx.id, {
-            date,
-            amount: direction === 'out' ? -magnitude : magnitude,
-            payee: payee || undefined,
-            memo: memo || undefined,
-            ...(categorizable
-                ? { category_id: rta || !placement ? null : Number(placement), rta }
-                : {}),
-        });
-        setBusy(false);
-        onSaved();
+        try {
+            await updateTransaction(tx.id, {
+                date,
+                amount: sign * magnitude,
+                payee: payee || undefined,
+                memo: memo || undefined,
+                ...(categorizable
+                    ? { category_id: rta || !placement ? null : Number(placement), rta }
+                    : {}),
+            });
+            onSaved();
+        } catch (err) {
+            setError(apiErrorMessage(err, 'Kunne ikke lagre.'));
+            setBusy(false);
+        }
+    }
+
+    // Overføringsben: kun splitt-editoren (resten styres av overføringsparet).
+    if (isTransfer) {
+        return (
+            <form onSubmit={submit} className="space-y-3">
+                <div className="text-xs font-medium text-neutral-600">
+                    Splitt overføring på flere kategorier ({formatNok(tx.amount)})
+                </div>
+                <SplitEditor lines={lines} setLines={setLines} groups={groups} target={target} rest={rest} />
+                {error && <p className="text-sm text-red-600">{error}</p>}
+                <div className="flex gap-2">
+                    <button
+                        type="submit"
+                        disabled={busy}
+                        className="rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+                    >
+                        Lagre
+                    </button>
+                    <button
+                        type="button"
+                        onClick={onCancel}
+                        className="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-500 hover:bg-neutral-100"
+                    >
+                        Avbryt
+                    </button>
+                </div>
+            </form>
+        );
     }
 
     return (
-        <form onSubmit={submit} className="flex flex-wrap items-end gap-3">
-            <label className="text-xs font-medium text-neutral-600">
-                Dato
-                <input
-                    type="date"
-                    value={date}
-                    onChange={(e) => setDate(e.target.value)}
-                    className="mt-1 block rounded-lg border border-neutral-300 px-2 py-1.5 text-sm focus:border-neutral-900 focus:outline-none"
-                />
-            </label>
-            <label className="flex-1 text-xs font-medium text-neutral-600">
-                Mottaker
-                <input
-                    value={payee}
-                    onChange={(e) => setPayee(e.target.value)}
-                    className="mt-1 block w-full rounded-lg border border-neutral-300 px-2 py-1.5 text-sm focus:border-neutral-900 focus:outline-none"
-                />
-            </label>
-            <label className="flex-1 text-xs font-medium text-neutral-600">
-                Notat
-                <input
-                    value={memo}
-                    onChange={(e) => setMemo(e.target.value)}
-                    className="mt-1 block w-full rounded-lg border border-neutral-300 px-2 py-1.5 text-sm focus:border-neutral-900 focus:outline-none"
-                />
-            </label>
-            {categorizable && (
+        <form onSubmit={submit} className="space-y-3">
+            <div className="flex flex-wrap items-end gap-3">
                 <label className="text-xs font-medium text-neutral-600">
-                    Kategori
-                    <select
-                        value={placement}
-                        onChange={(e) => setPlacement(e.target.value)}
+                    Dato
+                    <input
+                        type="date"
+                        value={date}
+                        onChange={(e) => setDate(e.target.value)}
                         className="mt-1 block rounded-lg border border-neutral-300 px-2 py-1.5 text-sm focus:border-neutral-900 focus:outline-none"
-                    >
-                        <option value="">Ukategorisert</option>
-                        <option value="rta">Klar til å fordele (RTA)</option>
-                        {groups.map((group) => (
-                            <optgroup key={group.id} label={group.name}>
-                                {group.categories.map((category) => (
-                                    <option key={category.id} value={category.id}>
-                                        {category.name}
-                                    </option>
-                                ))}
-                            </optgroup>
-                        ))}
-                    </select>
+                    />
                 </label>
-            )}
-            <div className="text-xs font-medium text-neutral-600">
-                Retning
-                <div className="mt-1 flex overflow-hidden rounded-lg border border-neutral-300 text-sm">
-                    <button
-                        type="button"
-                        onClick={() => setDirection('out')}
-                        className={`px-3 py-1.5 ${direction === 'out' ? 'bg-red-600 text-white' : 'bg-white'}`}
-                    >
-                        Ut
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setDirection('in')}
-                        className={`px-3 py-1.5 ${direction === 'in' ? 'bg-green-600 text-white' : 'bg-white'}`}
-                    >
-                        Inn
-                    </button>
+                <label className="flex-1 text-xs font-medium text-neutral-600">
+                    Mottaker
+                    <input
+                        value={payee}
+                        onChange={(e) => setPayee(e.target.value)}
+                        className="mt-1 block w-full rounded-lg border border-neutral-300 px-2 py-1.5 text-sm focus:border-neutral-900 focus:outline-none"
+                    />
+                </label>
+                <label className="flex-1 text-xs font-medium text-neutral-600">
+                    Notat
+                    <input
+                        value={memo}
+                        onChange={(e) => setMemo(e.target.value)}
+                        className="mt-1 block w-full rounded-lg border border-neutral-300 px-2 py-1.5 text-sm focus:border-neutral-900 focus:outline-none"
+                    />
+                </label>
+                <div className="text-xs font-medium text-neutral-600">
+                    Retning
+                    <div className="mt-1 flex overflow-hidden rounded-lg border border-neutral-300 text-sm">
+                        <button
+                            type="button"
+                            onClick={() => setDirection('out')}
+                            className={`px-3 py-1.5 ${direction === 'out' ? 'bg-red-600 text-white' : 'bg-white'}`}
+                        >
+                            Ut
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setDirection('in')}
+                            className={`px-3 py-1.5 ${direction === 'in' ? 'bg-green-600 text-white' : 'bg-white'}`}
+                        >
+                            Inn
+                        </button>
+                    </div>
                 </div>
+                <label className="text-xs font-medium text-neutral-600">
+                    Beløp
+                    <input
+                        inputMode="decimal"
+                        value={amount}
+                        onChange={(e) => setAmount(e.target.value)}
+                        className="mt-1 block w-28 rounded-lg border border-neutral-300 px-2 py-1.5 text-right text-sm tabular-nums focus:border-neutral-900 focus:outline-none"
+                    />
+                </label>
             </div>
-            <label className="text-xs font-medium text-neutral-600">
-                Beløp
-                <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    className="mt-1 block w-28 rounded-lg border border-neutral-300 px-2 py-1.5 text-right text-sm focus:border-neutral-900 focus:outline-none"
-                />
-            </label>
-            <button
-                type="submit"
-                disabled={busy}
-                className="rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
-            >
-                Lagre
-            </button>
-            <button
-                type="button"
-                onClick={onCancel}
-                className="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-500 hover:bg-neutral-100"
-            >
-                Avbryt
-            </button>
+
+            {categorizable && (
+                <div className="space-y-2">
+                    <div className="flex w-fit rounded-lg bg-neutral-100 p-1 text-sm">
+                        {(['single', 'split'] as const).map((m) => (
+                            <button
+                                key={m}
+                                type="button"
+                                onClick={() => setMode(m)}
+                                className={`rounded-md px-3 py-1 font-medium transition ${
+                                    mode === m
+                                        ? 'bg-white text-neutral-900 shadow-sm'
+                                        : 'text-neutral-500 hover:text-neutral-800'
+                                }`}
+                            >
+                                {m === 'single' ? 'Én kategori' : 'Splitt'}
+                            </button>
+                        ))}
+                    </div>
+
+                    {mode === 'single' ? (
+                        <label className="block text-xs font-medium text-neutral-600">
+                            Kategori
+                            <select
+                                value={placement}
+                                onChange={(e) => setPlacement(e.target.value)}
+                                className="mt-1 block rounded-lg border border-neutral-300 px-2 py-1.5 text-sm focus:border-neutral-900 focus:outline-none"
+                            >
+                                <option value="">Ukategorisert</option>
+                                <option value="rta">Klar til å fordele (RTA)</option>
+                                <CategoryOptions groups={groups} />
+                            </select>
+                        </label>
+                    ) : (
+                        <SplitEditor
+                            lines={lines}
+                            setLines={setLines}
+                            groups={groups}
+                            target={target}
+                            rest={rest}
+                        />
+                    )}
+                </div>
+            )}
+
+            {error && <p className="text-sm text-red-600">{error}</p>}
+            <div className="flex gap-2">
+                <button
+                    type="submit"
+                    disabled={busy}
+                    className="rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+                >
+                    Lagre
+                </button>
+                <button
+                    type="button"
+                    onClick={onCancel}
+                    className="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-500 hover:bg-neutral-100"
+                >
+                    Avbryt
+                </button>
+            </div>
         </form>
     );
 }

@@ -30,6 +30,13 @@ class TransactionResource extends JsonResource
             'cleared' => $this->cleared,
             'pending' => $this->pending,
             'rta' => $this->rta,
+            'is_split' => $this->is_split,
+            'splits' => $this->whenLoaded('splits', fn () => $this->splits->map(fn ($s): array => [
+                'id' => $s->id,
+                'category_id' => $s->category_id,
+                'amount' => round((float) $s->amount, 2),
+                'memo' => $s->memo,
+            ])->all()),
             'reconciled_at' => $this->reconciled_at?->toIso8601String(),
             'is_starting_balance' => $this->is_starting_balance,
             'transfer_id' => $this->transfer_id,

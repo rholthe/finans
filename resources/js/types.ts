@@ -34,11 +34,20 @@ export interface Transaction {
     memo: string | null;
     cleared: boolean;
     rta: boolean; // true = bevisst plassert i «Klar til å fordele» (vs. ikke vurdert ennå)
+    is_split: boolean; // beløpet er fordelt på flere kategorier (se splits)
+    splits?: TransactionSplit[]; // splittlinjer (kun med når relasjonen er lastet)
     pending: boolean; // reservert bankpost (ikke bokført ennå); byttes ut ved bokføring
     reconciled_at: string | null; // satt når raden er avstemt (null = ikke avstemt)
     is_starting_balance: boolean;
     transfer_id: number | null; // det andre benet i en overføring (null = vanlig transaksjon)
     transfer_account?: string | null; // navnet på motkontoen i overføringen
+}
+
+export interface TransactionSplit {
+    id: number;
+    category_id: number;
+    amount: number; // signert, samme fortegn som transaksjonen
+    memo: string | null;
 }
 
 export interface PageMeta {
