@@ -38,4 +38,19 @@ class SyncEvent extends Model
     {
         return in_array($this->status, [self::STATUS_NEW, self::STATUS_NO_NEW], true);
     }
+
+    /**
+     * Lesbar statusetikett for visning (e-post o.l.).
+     */
+    public function statusLabel(): string
+    {
+        return match ($this->status) {
+            self::STATUS_NEW => __('Nye transaksjoner importert'),
+            self::STATUS_NO_NEW => __('Fullført – ingen nye transaksjoner'),
+            self::STATUS_WITH_ERRORS => __('Fullført med merknader'),
+            self::STATUS_FAILED => __('Synk mislyktes'),
+            self::STATUS_PROCESSING => __('Pågår'),
+            default => ucfirst($this->status),
+        };
+    }
 }

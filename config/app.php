@@ -69,6 +69,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Display Timezone
+    |--------------------------------------------------------------------------
+    |
+    | Tidssonen brukt når UTC-tidspunkter fra databasen vises for brukeren
+    | (f.eks. i e-poster). Databasen lagres fortsatt i UTC; kun visning konverteres.
+    |
+    */
+
+    'display_timezone' => env('APP_DISPLAY_TIMEZONE', 'Europe/Oslo'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Locale Configuration
     |--------------------------------------------------------------------------
     |
