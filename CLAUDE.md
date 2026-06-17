@@ -150,6 +150,10 @@ Banking for prod-app-godkjenning.
   (`POST bank/connections/{id}/renew` → ny samtykkeflyt merket i økten med `bank_renew_connection_id`)
   gjenbruker den eksisterende tilkoblingen i callback: oppdaterer consent/utløp og re-mapper nye
   eksterne konto-id-er til eksisterende `bank_accounts` via IBAN, så budsjettkoblingene overlever.
+- **E-poster:** `SyncReportMail` + `ExpiringConsentMail` er stylede markdown-mail (panel/tabell/
+  knapp). Databasen lagres i **UTC**; tidspunkter konverteres kun ved *visning* til
+  `config('app.display_timezone')` (`APP_DISPLAY_TIMEZONE`, default `Europe/Oslo`) med tidssone-
+  etikett (CET/CEST).
 - **Ingen YNAB-lengdegrenser** på payee/memo lenger. **Kun NOK** i første omgang.
 
 ## Faseplan
@@ -180,6 +184,12 @@ Banking for prod-app-godkjenning.
    - ✅ Overføringer: budsjett↔overvåket-kategorisering via `TransferService`, egen
      «Overføring»-kolonne, alle overføringer låst, overvåkede kontoer uten kategori
    - ✅ Regel-mål: kategori / RTA / overføring (`RuleTarget`)
+   - ✅ Kontodetaljsiden: hero-kort (accent budsjett/overvåket), slett- og «endre
+     avstemt»-bekreftelse som modaler (ingen `confirm()`)
+   - ✅ Bank-siden: hero-chips m/utløpsbadge + «Forny», stylet synk-resultatkort,
+     frakoblings-modal, fjernet overflødig «ignorer»-sjekkboks
+   - ✅ Innstillinger: rapport-e-post-mottaker (flyttet fra env)
+   - Konvensjon: bekreftelser bruker `Modal`-komponenten, ikke nettleserens `confirm()`
 
 ===
 
