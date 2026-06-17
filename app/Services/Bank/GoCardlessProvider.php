@@ -77,13 +77,41 @@ class GoCardlessProvider implements BankDataProvider
     {
         $requisition = $this->request('GET', "/requisitions/{$consentId}/")->json();
         $status = (string) ($requisition['status'] ?? '—');
+        $linked = $status === 'LN';
 
         return new BankConsent(
             id: $consentId,
-            linked: $status === 'LN',
+            linked: $linked,
             status: $status,
             accountIds: array_values($requisition['accounts'] ?? []),
+            // Utløp ligger på det tilknyttede end-user-agreementet; hent det kun
+            // for et aktivt samtykke (best-effort, blokkerer ikke synk ved feil).
+            expiresAt: $linked ? $this->agreementExpiry($requisition['agreement'] ?? null) : null,
         );
+    }
+
+    /**
+     * Utløpstidspunkt fra et end-user-agreement: aksepttidspunkt + gyldighetsdager.
+     */
+    private function agreementExpiry(?string $agreementId): ?CarbonImmutable
+    {
+        if (! $agreementId) {
+            return null;
+        }
+
+        try {
+            $agreement = $this->request('GET', "/agreements/enduser/{$agreementId}/")->json();
+            $accepted = $agreement['accepted'] ?? null;
+            $days = (int) ($agreement['access_valid_for_days'] ?? 0);
+
+            if ($accepted && $days > 0) {
+                return CarbonImmutable::parse($accepted)->addDays($days);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Kunne ikke hente GoCardless-agreement for utløp: '.$e->getMessage());
+        }
+
+        return null;
     }
 
     public function deleteConsent(string $consentId): void

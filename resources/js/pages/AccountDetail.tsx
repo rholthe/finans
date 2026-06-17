@@ -29,6 +29,7 @@ import { formatDate, formatNok, todayIso } from '@/lib/format';
 import {
     ACCOUNT_TYPE_LABELS,
     type Account,
+    type AccountType,
     type CategoryGroup,
     type PageMeta,
     type Transaction,
@@ -36,9 +37,18 @@ import {
 
 const PER_PAGE_OPTIONS = [25, 50, 100, 200, 500];
 
-/** Bekreftelse før en tidligere avstemt transaksjon endres eller slettes. */
-function confirmReconciled(): boolean {
-    return confirm('Denne transaksjonen er tidligere avstemt. Er du helt sikker på at du vil endre den?');
+const ACCOUNT_TYPE_ICON: Record<AccountType, string> = {
+    cash: '💵',
+    bank: '🏦',
+    credit: '💳',
+    loan: '🏠',
+};
+
+// Samme accent-system som kontolistesiden: emerald for budsjett, sky for overvåket.
+function accountAccent(onBudget: boolean) {
+    return onBudget
+        ? { badge: 'bg-emerald-100 text-emerald-700', gradient: 'from-emerald-50 via-white to-sky-50' }
+        : { badge: 'bg-sky-100 text-sky-700', gradient: 'from-sky-50 via-white to-white' };
 }
 
 export default function AccountDetail() {
@@ -61,6 +71,12 @@ export default function AccountDetail() {
 
     const [editingId, setEditingId] = useState<number | null>(null);
     const [ruleForTx, setRuleForTx] = useState<Transaction | null>(null);
+    const [deletingTx, setDeletingTx] = useState<Transaction | null>(null);
+    // Bekreftelse før en avstemt transaksjon endres (rediger eller klarert-toggle).
+    const [reconciledPending, setReconciledPending] = useState<{
+        kind: 'edit' | 'cleared';
+        tx: Transaction;
+    } | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
     const [showReconcile, setShowReconcile] = useState(false);
 
@@ -90,23 +106,38 @@ export default function AccountDetail() {
     );
 
     async function toggleCleared(tx: Transaction) {
-        if (tx.reconciled_at && !confirmReconciled()) return;
+        if (tx.reconciled_at) {
+            setReconciledPending({ kind: 'cleared', tx });
+            return;
+        }
         await updateTransaction(tx.id, { cleared: !tx.cleared });
         reload();
     }
 
     function startEdit(tx: Transaction) {
-        if (tx.reconciled_at && !confirmReconciled()) return;
+        if (tx.reconciled_at) {
+            setReconciledPending({ kind: 'edit', tx });
+            return;
+        }
         setEditingId(tx.id);
     }
 
-    async function remove(tx: Transaction) {
-        if (tx.reconciled_at) {
-            if (!confirmReconciled()) return;
-        } else if (!confirm('Slette denne transaksjonen?')) {
-            return;
+    async function confirmReconciledAction() {
+        if (!reconciledPending) return;
+        const { kind, tx } = reconciledPending;
+        setReconciledPending(null);
+        if (kind === 'cleared') {
+            await updateTransaction(tx.id, { cleared: !tx.cleared });
+            reload();
+        } else {
+            setEditingId(tx.id);
         }
-        await deleteTransaction(tx.id);
+    }
+
+    async function confirmDelete() {
+        if (!deletingTx) return;
+        await deleteTransaction(deletingTx.id);
+        setDeletingTx(null);
         reload();
     }
 
@@ -148,35 +179,68 @@ export default function AccountDetail() {
                 ← Alle kontoer
             </Link>
 
-            <div className="mt-2 flex items-baseline justify-between">
-                <h1 className="flex items-center gap-2 text-2xl font-semibold">
-                    {account.name}
-                    <span className="rounded bg-neutral-100 px-2 py-0.5 text-xs font-normal text-neutral-500">
-                        {ACCOUNT_TYPE_LABELS[account.type]}
-                    </span>
-                </h1>
-                <div className="flex items-center gap-3">
-                    <button
-                        onClick={() => setShowReconcile(true)}
-                        className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
+            {(() => {
+                const accent = accountAccent(account.on_budget);
+                return (
+                    <div
+                        className={`mt-2 rounded-2xl bg-gradient-to-br ${accent.gradient} p-6 shadow-sm ring-1 ring-neutral-200`}
                     >
-                        Avstem
-                    </button>
-                    <span
-                        className={`text-xl font-semibold tabular-nums ${
-                            account.balance < 0 ? 'text-red-600' : 'text-neutral-900'
-                        }`}
-                    >
-                        {formatNok(account.balance)}
-                    </span>
-                </div>
-            </div>
-
-            <p className="mt-1 text-right text-xs text-neutral-400">
-                Klarert: {formatNok(account.cleared_balance)}
-                {account.last_reconciled_at &&
-                    ` · sist avstemt ${formatDate(account.last_reconciled_at)}`}
-            </p>
+                        <div className="flex items-start justify-between gap-4">
+                            <div className="flex min-w-0 items-center gap-3">
+                                <span
+                                    className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-xl ${accent.badge}`}
+                                    aria-hidden
+                                >
+                                    {ACCOUNT_TYPE_ICON[account.type]}
+                                </span>
+                                <div className="min-w-0">
+                                    <h1
+                                        className={`flex items-center gap-2 truncate text-2xl font-semibold ${
+                                            account.closed ? 'text-neutral-400 line-through' : 'text-neutral-900'
+                                        }`}
+                                    >
+                                        {account.name}
+                                        {account.bank_synced && (
+                                            <span title="Banksynkronisert" className="text-sm text-sky-500" aria-hidden>
+                                                🔄
+                                            </span>
+                                        )}
+                                    </h1>
+                                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                        <span className="rounded bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-500">
+                                            {ACCOUNT_TYPE_LABELS[account.type]}
+                                        </span>
+                                        <span className="rounded bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-500">
+                                            {account.on_budget ? '💰 Budsjett' : '👁️ Overvåket'}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex flex-col items-end gap-2">
+                                <span
+                                    className={`text-3xl font-semibold tabular-nums ${
+                                        account.balance < 0 ? 'text-red-600' : 'text-neutral-900'
+                                    }`}
+                                >
+                                    {formatNok(account.balance)}
+                                </span>
+                                <button
+                                    onClick={() => setShowReconcile(true)}
+                                    className="rounded-lg border border-neutral-300 bg-white/70 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-white"
+                                >
+                                    Avstem
+                                </button>
+                            </div>
+                        </div>
+                        <p className="mt-3 text-xs text-neutral-500">
+                            Klarert:{' '}
+                            <span className="font-medium tabular-nums">{formatNok(account.cleared_balance)}</span>
+                            {account.last_reconciled_at &&
+                                ` · sist avstemt ${formatDate(account.last_reconciled_at)}`}
+                        </p>
+                    </div>
+                );
+            })()}
 
             {showReconcile && (
                 <ReconcileModal
@@ -208,6 +272,23 @@ export default function AccountDetail() {
                         onCancel={() => setRuleForTx(null)}
                     />
                 </Modal>
+            )}
+
+            {deletingTx && (
+                <DeleteTransactionModal
+                    tx={deletingTx}
+                    categoryName={categoryName}
+                    onClose={() => setDeletingTx(null)}
+                    onConfirm={confirmDelete}
+                />
+            )}
+
+            {reconciledPending && (
+                <ConfirmReconciledModal
+                    kind={reconciledPending.kind}
+                    onClose={() => setReconciledPending(null)}
+                    onConfirm={confirmReconciledAction}
+                />
             )}
 
             {/* Filter + paginering */}
@@ -454,7 +535,7 @@ export default function AccountDetail() {
                                                     </button>
                                                 )}
                                             <button
-                                                onClick={() => remove(tx)}
+                                                onClick={() => setDeletingTx(tx)}
                                                 className="ml-3 text-xs text-neutral-400 hover:text-red-600"
                                             >
                                                 Slett
@@ -492,6 +573,164 @@ export default function AccountDetail() {
                 </div>
             )}
         </Layout>
+    );
+}
+
+/** Bekreftelse før en tidligere avstemt transaksjon endres (rediger eller klarert-toggle). */
+function ConfirmReconciledModal({
+    kind,
+    onClose,
+    onConfirm,
+}: {
+    kind: 'edit' | 'cleared';
+    onClose: () => void;
+    onConfirm: () => Promise<void>;
+}) {
+    const [busy, setBusy] = useState(false);
+
+    async function submit() {
+        setBusy(true);
+        try {
+            await onConfirm();
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    return (
+        <Modal
+            title="Endre avstemt transaksjon?"
+            size="sm"
+            onClose={onClose}
+            footer={
+                <>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        disabled={busy}
+                        className="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-500 hover:bg-neutral-100 disabled:opacity-50"
+                    >
+                        Avbryt
+                    </button>
+                    <button
+                        type="button"
+                        onClick={submit}
+                        disabled={busy}
+                        className="rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+                    >
+                        {busy ? 'Fortsetter …' : kind === 'edit' ? 'Rediger likevel' : 'Endre likevel'}
+                    </button>
+                </>
+            }
+        >
+            <p className="text-sm text-neutral-600">
+                Denne transaksjonen er tidligere avstemt.{' '}
+                {kind === 'cleared'
+                    ? 'Å endre klarert-status påvirker den klarerte saldoen.'
+                    : 'Å endre den kan gjøre at den klarerte saldoen ikke lenger stemmer med avstemmingen.'}
+            </p>
+        </Modal>
+    );
+}
+
+/** Bekreftelsesmodal for sletting av en transaksjon (med ekstra varsel ved avstemte/overføringer). */
+function DeleteTransactionModal({
+    tx,
+    categoryName,
+    onClose,
+    onConfirm,
+}: {
+    tx: Transaction;
+    categoryName: Map<number, string>;
+    onClose: () => void;
+    onConfirm: () => Promise<void>;
+}) {
+    const [busy, setBusy] = useState(false);
+
+    async function submit() {
+        setBusy(true);
+        try {
+            await onConfirm();
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    const category = tx.is_split
+        ? `Delt (${tx.splits?.length ?? 0})`
+        : tx.category_id
+          ? (categoryName.get(tx.category_id) ?? '—')
+          : null;
+
+    return (
+        <Modal
+            title="Slette transaksjon?"
+            size="sm"
+            onClose={onClose}
+            footer={
+                <>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        disabled={busy}
+                        className="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-500 hover:bg-neutral-100 disabled:opacity-50"
+                    >
+                        Avbryt
+                    </button>
+                    <button
+                        type="button"
+                        onClick={submit}
+                        disabled={busy}
+                        className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                    >
+                        {busy ? 'Sletter …' : 'Slett'}
+                    </button>
+                </>
+            }
+        >
+            <p className="text-sm text-neutral-600">Denne handlingen kan ikke angres.</p>
+
+            <dl className="mt-3 space-y-1.5 rounded-xl bg-neutral-50 p-3 text-sm ring-1 ring-neutral-100">
+                <div className="flex justify-between gap-3">
+                    <dt className="text-neutral-500">Dato</dt>
+                    <dd className="tabular-nums text-neutral-800">{formatDate(tx.date)}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                    <dt className="text-neutral-500">Mottaker</dt>
+                    <dd className="truncate text-neutral-800">{tx.payee ?? '—'}</dd>
+                </div>
+                {category && (
+                    <div className="flex justify-between gap-3">
+                        <dt className="text-neutral-500">Kategori</dt>
+                        <dd className="truncate text-neutral-800">{category}</dd>
+                    </div>
+                )}
+                <div className="flex justify-between gap-3">
+                    <dt className="text-neutral-500">Beløp</dt>
+                    <dd
+                        className={`font-medium tabular-nums ${
+                            tx.amount < 0 ? 'text-red-600' : 'text-green-700'
+                        }`}
+                    >
+                        {formatNok(tx.amount)}
+                    </dd>
+                </div>
+            </dl>
+
+            {tx.transfer_id && (
+                <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    <span aria-hidden>⚠️</span> Dette er en overføring – det sammenkoblede benet
+                    {tx.transfer_account ? ` mot ${tx.transfer_account}` : ''} slettes også.
+                </p>
+            )}
+
+            {tx.reconciled_at && (
+                <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    <span aria-hidden>⚠️</span> Transaksjonen er tidligere avstemt. Sletting endrer den
+                    klarerte saldoen.
+                </p>
+            )}
+        </Modal>
     );
 }
 

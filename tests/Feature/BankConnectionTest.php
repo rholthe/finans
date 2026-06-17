@@ -128,6 +128,56 @@ class BankConnectionTest extends TestCase
             ->assertJsonPath('imported_count', 4);
     }
 
+    public function test_renew_starter_fornying_og_merker_okten(): void
+    {
+        $connection = BankConnection::create([
+            'institution_id' => 'SANDBOXFINANCE_SFIN0000', 'name' => 'Sandbox', 'consent_id' => 'old', 'status' => 'EX',
+        ]);
+
+        $this->postJson("/api/bank/connections/{$connection->id}/renew")
+            ->assertOk()
+            ->assertJsonPath('link', 'https://example.test/link')
+            ->assertSessionHas('bank_renew_connection_id', $connection->id);
+    }
+
+    public function test_callback_fornyer_og_beholder_kontokobling(): void
+    {
+        $account = Account::factory()->create();
+        $connection = BankConnection::create([
+            'institution_id' => 'SANDBOXFINANCE_SFIN0000', 'name' => 'Sandbox', 'consent_id' => 'old', 'status' => 'EX',
+        ]);
+        // Leverandøren gir nye konto-id-er ved fornying; vi re-mapper via IBAN.
+        $bankAccount = $connection->bankAccounts()->create([
+            'external_id' => 'acc-a', 'iban' => 'NO111', 'account_id' => $account->id,
+        ]);
+
+        $this->provider->consents['consent_x'] = [
+            'status' => 'LN',
+            'accounts' => ['acc-a-new'],
+            'valid_until' => now()->addDays(90)->toIso8601String(),
+        ];
+        $this->provider->accountDetails['acc-a-new'] = ['iban' => 'NO111'];
+
+        $this->withSession([
+            'bank_ref' => 'tok',
+            'bank_provider' => 'gocardless',
+            'bank_consent_id' => 'consent_x',
+            'bank_institution_id' => 'SANDBOXFINANCE_SFIN0000',
+            'bank_renew_connection_id' => $connection->id,
+        ])->get('/api/bank/callback?ref=tok')
+            ->assertRedirect('/bank?status=renewed');
+
+        // Kontokoblingen overlever: samme rad, ny external_id, beholdt account_id.
+        $this->assertDatabaseHas('bank_accounts', [
+            'id' => $bankAccount->id, 'external_id' => 'acc-a-new', 'account_id' => $account->id,
+        ]);
+        $this->assertDatabaseCount('bank_accounts', 1);
+        $this->assertDatabaseHas('bank_connections', [
+            'id' => $connection->id, 'consent_id' => 'consent_x', 'status' => 'LN',
+        ]);
+        $this->assertNotNull($connection->fresh()->valid_until);
+    }
+
     public function test_connections_viser_rate_limit(): void
     {
         $connection = BankConnection::create([

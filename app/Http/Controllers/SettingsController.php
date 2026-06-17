@@ -18,10 +18,12 @@ class SettingsController extends Controller
         $validated = $request->validate([
             AppSettings::MANUAL_SYNC_DAYS => ['sometimes', 'integer', 'min:1', 'max:'.AppSettings::MAX[AppSettings::MANUAL_SYNC_DAYS]],
             AppSettings::AUTO_SYNC_DAYS => ['sometimes', 'integer', 'min:1', 'max:'.AppSettings::MAX[AppSettings::AUTO_SYNC_DAYS]],
+            AppSettings::REPORT_EMAIL => ['sometimes', 'nullable', 'email'],
         ]);
 
         foreach ($validated as $key => $value) {
-            AppSettings::set($key, $value);
+            // En tom e-post nullstiller innstillingen (faller tilbake til config).
+            AppSettings::set($key, $value ?? '');
         }
 
         return response()->json(['data' => AppSettings::all()]);

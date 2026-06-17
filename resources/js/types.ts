@@ -285,6 +285,7 @@ export interface BankConnection {
     name: string;
     institution_id: string;
     status: string; // rå leverandørstatus (GoCardless: LN = linket)
+    valid_until: string | null; // ISO-tidspunkt for samtykkeutløp, eller null hvis ukjent
     accounts: BankAccountLink[];
 }
 
@@ -300,4 +301,5 @@ export interface SyncResult {
 export interface AppSettings {
     manual_sync_days: number;
     auto_sync_days: number;
+    report_email: string | null;
 }

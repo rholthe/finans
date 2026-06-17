@@ -67,6 +67,7 @@ class FakeBankProvider implements BankDataProvider
             linked: $status === 'LN',
             status: $status,
             accountIds: array_values($data['accounts'] ?? []),
+            expiresAt: isset($data['valid_until']) ? CarbonImmutable::parse($data['valid_until']) : null,
         );
     }
 

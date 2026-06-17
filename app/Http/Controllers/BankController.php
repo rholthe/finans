@@ -6,6 +6,8 @@ use App\Jobs\SyncBankTransactionsJob;
 use App\Models\BankAccount;
 use App\Models\BankConnection;
 use App\Models\SyncEvent;
+use App\Services\Bank\BankConsent;
+use App\Services\Bank\BankDataProvider;
 use App\Services\Bank\BankProviderRegistry;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -46,6 +48,7 @@ class BankController extends Controller
                 'name' => $c->name,
                 'institution_id' => $c->institution_id,
                 'status' => $c->status,
+                'valid_until' => $c->valid_until?->toIso8601String(),
                 'accounts' => $c->bankAccounts->map(fn (BankAccount $a): array => [
                     'id' => $a->id,
                     'external_id' => $a->external_id,
@@ -86,6 +89,26 @@ class BankController extends Controller
     }
 
     /**
+     * Forny en eksisterende banktilkobling: start en ny samtykkeflyt for samme
+     * bank/leverandør, men merk økten slik at callback gjenbruker tilkoblingen
+     * (og beholder kontokoblingene) i stedet for å opprette en ny.
+     */
+    public function renew(Request $request, BankConnection $bankConnection): JsonResponse
+    {
+        $provider = $this->providers->get($bankConnection->provider);
+        $reference = (string) Str::uuid();
+        $consent = $provider->createConsent($bankConnection->institution_id, $reference);
+
+        $request->session()->put('bank_ref', $reference);
+        $request->session()->put('bank_provider', $bankConnection->provider);
+        $request->session()->put('bank_consent_id', $consent->id);
+        $request->session()->put('bank_institution_id', $bankConnection->institution_id);
+        $request->session()->put('bank_renew_connection_id', $bankConnection->id);
+
+        return response()->json(['link' => $consent->link]);
+    }
+
+    /**
      * Callback fra GoCardless (topp-nivå nettlesernavigasjon). Verifiserer
      * referansen, lagrer bank + kontoer, og sender brukeren til SPA-en.
      */
@@ -95,6 +118,7 @@ class BankController extends Controller
         $providerKey = $request->session()->pull('bank_provider', BankProviderRegistry::DEFAULT);
         $consentId = $request->session()->pull('bank_consent_id');
         $institutionId = $request->session()->pull('bank_institution_id');
+        $renewId = $request->session()->pull('bank_renew_connection_id');
 
         if (! $this->providers->isValid($providerKey) || ! $institutionId) {
             return redirect('/bank?status=error&reason=session');
@@ -109,38 +133,104 @@ class BankController extends Controller
 
         try {
             $consent = $provider->completeConsent($request->query(), $consentId ?: null);
-            $accountIds = $consent->accountIds;
 
-            // Dupliseringssjekk: avbryt hvis en av kontoene allerede finnes.
-            if (BankAccount::whereIn('external_id', $accountIds)->exists()) {
-                return redirect('/bank?status=error&reason=duplicate');
-            }
-
-            $name = collect($provider->getInstitutions('NO'))
-                ->firstWhere('id', $institutionId)['name'] ?? $institutionId;
-
-            $connection = BankConnection::create([
-                'provider' => $providerKey,
-                'institution_id' => $institutionId,
-                'name' => $name,
-                'consent_id' => $consent->id,
-                'status' => $consent->status,
-            ]);
-
-            foreach ($accountIds as $accountId) {
-                $details = $provider->getAccountDetails($accountId);
-                $connection->bankAccounts()->create([
-                    'external_id' => $accountId,
-                    'iban' => $details['iban'] ?? data_get($details, 'account.iban'),
-                ]);
-            }
-
-            return redirect('/bank?status=connected');
+            // Fornying gjenbruker en eksisterende tilkobling og beholder
+            // budsjettkoblingene; ny tilkobling oppretter alt fra bunnen.
+            return $renewId
+                ? $this->completeRenewal((int) $renewId, $provider, $consent)
+                : $this->completeNewConnection($provider, $providerKey, $institutionId, $consent);
         } catch (Throwable $e) {
             Log::error('Banktilkobling feilet i callback', ['exception' => $e]);
 
             return redirect('/bank?status=error&reason=api');
         }
+    }
+
+    /**
+     * Lagre en helt ny banktilkobling med kontoer fra et fullført samtykke.
+     */
+    private function completeNewConnection(
+        BankDataProvider $provider,
+        string $providerKey,
+        string $institutionId,
+        BankConsent $consent,
+    ): RedirectResponse {
+        // Dupliseringssjekk: avbryt hvis en av kontoene allerede finnes.
+        if (BankAccount::whereIn('external_id', $consent->accountIds)->exists()) {
+            return redirect('/bank?status=error&reason=duplicate');
+        }
+
+        $name = collect($provider->getInstitutions('NO'))
+            ->firstWhere('id', $institutionId)['name'] ?? $institutionId;
+
+        $connection = BankConnection::create([
+            'provider' => $providerKey,
+            'institution_id' => $institutionId,
+            'name' => $name,
+            'consent_id' => $consent->id,
+            'status' => $consent->status,
+            'valid_until' => $consent->expiresAt,
+        ]);
+
+        foreach ($consent->accountIds as $accountId) {
+            $details = $provider->getAccountDetails($accountId);
+            $connection->bankAccounts()->create([
+                'external_id' => $accountId,
+                'iban' => $details['iban'] ?? data_get($details, 'account.iban'),
+            ]);
+        }
+
+        return redirect('/bank?status=connected');
+    }
+
+    /**
+     * Fullfør en fornying: oppdater consent/utløp på den eksisterende tilkoblingen
+     * og re-map nye eksterne konto-id-er til eksisterende bankkontoer via IBAN, slik
+     * at koblingene til budsjettkontoer overlever (leverandøren kan gi nye konto-id-er).
+     */
+    private function completeRenewal(
+        int $connectionId,
+        BankDataProvider $provider,
+        BankConsent $consent,
+    ): RedirectResponse {
+        $connection = BankConnection::with('bankAccounts')->find($connectionId);
+
+        if (! $connection) {
+            return redirect('/bank?status=error&reason=session');
+        }
+
+        // De nye konto-id-ene må ikke allerede tilhøre en annen tilkobling.
+        $clashes = BankAccount::whereIn('external_id', $consent->accountIds)
+            ->where('bank_connection_id', '!=', $connection->id)
+            ->exists();
+
+        if ($clashes) {
+            return redirect('/bank?status=error&reason=duplicate');
+        }
+
+        $connection->update([
+            'consent_id' => $consent->id,
+            'status' => $consent->status,
+            'valid_until' => $consent->expiresAt,
+            'expiry_notified_at' => null,
+        ]);
+
+        $existingByIban = $connection->bankAccounts->keyBy('iban');
+
+        foreach ($consent->accountIds as $accountId) {
+            $details = $provider->getAccountDetails($accountId);
+            $iban = $details['iban'] ?? data_get($details, 'account.iban');
+
+            $match = $iban ? $existingByIban->get($iban) : null;
+
+            if ($match) {
+                $match->update(['external_id' => $accountId, 'iban' => $iban]);
+            } else {
+                $connection->bankAccounts()->create(['external_id' => $accountId, 'iban' => $iban]);
+            }
+        }
+
+        return redirect('/bank?status=renewed');
     }
 
     /**

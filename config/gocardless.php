@@ -24,7 +24,11 @@ return [
     'sync_days' => (int) env('BANK_SYNC_DAYS', 90),
 
     // E-postadresse rapporten sendes til etter hver synk (vellykket og mislykket).
+    // Samme adresse mottar varsel om at en bankgodkjenning snart utløper.
     'report_email' => env('BANK_SYNC_REPORT_EMAIL'),
+
+    // Antall dager før utløp vi varsler om at en bankgodkjenning må fornyes.
+    'expiry_warning_days' => (int) env('BANK_CONSENT_EXPIRY_WARNING_DAYS', 7),
 
     /*
     |--------------------------------------------------------------------------

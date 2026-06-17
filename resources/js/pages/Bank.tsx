@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Layout from '@/components/Layout';
+import Modal from '@/components/Modal';
 import {
     apiErrorMessage,
     connectBank,
@@ -10,8 +11,10 @@ import {
     listAccounts,
     listBankConnections,
     listInstitutions,
+    renewBankConnection,
     syncBank,
 } from '@/lib/data';
+import { formatDate } from '@/lib/format';
 import {
     BANK_PROVIDER_LABELS,
     type Account,
@@ -41,8 +44,18 @@ function isLinked(status: string): boolean {
     return ['LN', 'AUTHORIZED', 'VALID'].includes(status);
 }
 
+/** Dager til utløp (negativt = utløpt), eller null hvis ukjent. */
+function daysUntil(iso: string | null): number | null {
+    if (!iso) return null;
+    const ms = new Date(iso).getTime() - Date.now();
+    return Math.ceil(ms / 86_400_000);
+}
+
+const EXPIRY_WARNING_DAYS = 14;
+
 const CALLBACK_MESSAGES: Record<string, { tone: 'ok' | 'error'; text: string }> = {
     connected: { tone: 'ok', text: 'Banken ble koblet til. Koble kontoene til budsjettkontoer nedenfor.' },
+    renewed: { tone: 'ok', text: 'Godkjenningen ble fornyet. Kontokoblingene er beholdt.' },
     'error:token': { tone: 'error', text: 'Sikkerhetstoken stemte ikke. Prøv tilkoblingen på nytt.' },
     'error:session': { tone: 'error', text: 'Økten utløp. Prøv tilkoblingen på nytt.' },
     'error:duplicate': { tone: 'error', text: 'Denne banken/kontoen er allerede tilkoblet.' },
@@ -61,6 +74,7 @@ export default function Bank() {
     const [syncing, setSyncing] = useState(false);
     const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [disconnecting, setDisconnecting] = useState<BankConnection | null>(null);
 
     const status = searchParams.get('status');
     const reason = searchParams.get('reason');
@@ -107,6 +121,16 @@ export default function Bank() {
         }
     }
 
+    async function renew(connection: BankConnection) {
+        setError(null);
+        try {
+            const link = await renewBankConnection(connection.id);
+            window.location.href = link; // topp-nivå navigasjon til bankens samtykkeside
+        } catch (e) {
+            setError(apiErrorMessage(e, 'Kunne ikke starte fornying.'));
+        }
+    }
+
     async function runSync() {
         setSyncing(true);
         setError(null);
@@ -133,14 +157,10 @@ export default function Bank() {
         reloadConnections();
     }
 
-    async function toggleIgnore(bankAccountId: number, ignored: boolean) {
-        await linkBankAccount(bankAccountId, { ignored });
-        reloadConnections();
-    }
-
-    async function removeConnection(connection: BankConnection) {
-        if (!confirm(`Koble fra ${connection.name}? Importerte transaksjoner beholdes.`)) return;
-        await deleteBankConnection(connection.id);
+    async function confirmDisconnect() {
+        if (!disconnecting) return;
+        await deleteBankConnection(disconnecting.id);
+        setDisconnecting(null);
         reloadConnections();
     }
 
@@ -166,8 +186,10 @@ export default function Bank() {
 
             {banner && (
                 <div
-                    className={`mt-4 rounded-lg px-4 py-3 text-sm ${
-                        banner.tone === 'ok' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-700'
+                    className={`mt-4 rounded-xl px-4 py-3 text-sm ring-1 ${
+                        banner.tone === 'ok'
+                            ? 'bg-green-50 text-green-800 ring-green-100'
+                            : 'bg-red-50 text-red-700 ring-red-100'
                     }`}
                 >
                     <div className="flex items-center justify-between">
@@ -182,22 +204,7 @@ export default function Bank() {
                 </div>
             )}
 
-            {syncResult && (
-                <div className="mt-4 rounded-lg border border-neutral-200 bg-white p-4 text-sm">
-                    <p className="font-medium">
-                        Synk fullført ({syncResult.status}): {syncResult.imported_count} nye transaksjon(er).
-                    </p>
-                    {syncResult.report.length > 0 && (
-                        <ul className="mt-2 space-y-0.5 text-xs text-neutral-500">
-                            {syncResult.report.map((line, i) => (
-                                <li key={i}>
-                                    <span className="uppercase">{line.status}:</span> {line.message}
-                                </li>
-                            ))}
-                        </ul>
-                    )}
-                </div>
-            )}
+            {syncResult && <SyncResultCard result={syncResult} onClose={() => setSyncResult(null)} />}
 
             {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
 
@@ -246,19 +253,34 @@ export default function Bank() {
             {loading ? (
                 <p className="mt-8 text-neutral-400">Laster …</p>
             ) : connections.length === 0 ? (
-                <p className="mt-8 text-neutral-500">Ingen tilkoblede banker ennå.</p>
+                <div className="mt-8 rounded-xl border border-dashed border-neutral-300 p-8 text-center text-neutral-500">
+                    Ingen tilkoblede banker ennå. Koble til banken din over for å importere transaksjoner.
+                </div>
             ) : (
                 <div className="mt-8 space-y-6">
-                    {connections.map((connection) => (
-                        <section key={connection.id} className="rounded-xl border border-neutral-200 bg-white">
-                            <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3">
-                                <div className="flex items-center gap-2">
-                                    <span className="font-semibold">{connection.name}</span>
-                                    <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-500">
+                    {connections.map((connection) => {
+                        const days = daysUntil(connection.valid_until);
+                        const expired = days !== null && days <= 0;
+                        const expiringSoon = days !== null && days > 0 && days <= EXPIRY_WARNING_DAYS;
+                        return (
+                        <section
+                            key={connection.id}
+                            className="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm"
+                        >
+                            <div className="flex items-center justify-between gap-3 border-b border-neutral-100 px-5 py-3">
+                                <div className="flex min-w-0 items-center gap-2.5">
+                                    <span
+                                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-100 text-lg text-sky-700"
+                                        aria-hidden
+                                    >
+                                        🏦
+                                    </span>
+                                    <span className="truncate font-semibold">{connection.name}</span>
+                                    <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-500">
                                         {BANK_PROVIDER_LABELS[connection.provider] ?? connection.provider}
                                     </span>
                                     <span
-                                        className={`rounded px-1.5 py-0.5 text-xs ${
+                                        className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
                                             isLinked(connection.status)
                                                 ? 'bg-green-100 text-green-700'
                                                 : 'bg-amber-100 text-amber-700'
@@ -266,13 +288,47 @@ export default function Bank() {
                                     >
                                         {isLinked(connection.status) ? 'Tilkoblet' : connection.status}
                                     </span>
+                                    <span className="shrink-0 rounded-full bg-neutral-50 px-2 py-0.5 text-xs font-medium text-neutral-400">
+                                        {connection.accounts.length}{' '}
+                                        {connection.accounts.length === 1 ? 'konto' : 'kontoer'}
+                                    </span>
+                                    {(expired || expiringSoon) && (
+                                        <span
+                                            title={
+                                                connection.valid_until
+                                                    ? `Godkjenningen utløper ${formatDate(connection.valid_until)}`
+                                                    : undefined
+                                            }
+                                            className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
+                                                expired
+                                                    ? 'bg-red-100 text-red-700'
+                                                    : 'bg-amber-100 text-amber-700'
+                                            }`}
+                                        >
+                                            {expired
+                                                ? 'Godkjenning utløpt'
+                                                : `Utløper om ${days} ${days === 1 ? 'dag' : 'dager'}`}
+                                        </span>
+                                    )}
                                 </div>
-                                <button
-                                    onClick={() => removeConnection(connection)}
-                                    className="text-xs text-neutral-400 hover:text-red-600"
-                                >
-                                    Koble fra
-                                </button>
+                                <div className="flex shrink-0 items-center gap-3">
+                                    <button
+                                        onClick={() => renew(connection)}
+                                        className={`text-xs font-medium ${
+                                            expired || expiringSoon
+                                                ? 'text-sky-600 hover:text-sky-800'
+                                                : 'text-neutral-400 hover:text-neutral-900'
+                                        }`}
+                                    >
+                                        Forny
+                                    </button>
+                                    <button
+                                        onClick={() => setDisconnecting(connection)}
+                                        className="text-xs text-neutral-400 hover:text-red-600"
+                                    >
+                                        Koble fra
+                                    </button>
+                                </div>
                             </div>
                             <ul className="divide-y divide-neutral-100">
                                 {connection.accounts.map((bankAccount) => (
@@ -288,44 +344,168 @@ export default function Bank() {
                                                 </span>
                                             )}
                                         </span>
-                                        <div className="flex items-center gap-3">
-                                            <label className="text-xs text-neutral-500">
-                                                Budsjettkonto
-                                                <select
-                                                    value={bankAccount.account_id ?? ''}
-                                                    onChange={(e) =>
-                                                        setLink(
-                                                            bankAccount.id,
-                                                            e.target.value ? Number(e.target.value) : null,
-                                                        )
-                                                    }
-                                                    className="ml-2 rounded-lg border border-neutral-300 px-2 py-1 text-sm focus:border-neutral-900 focus:outline-none"
-                                                >
-                                                    <option value="">Ikke koblet</option>
-                                                    {accounts.map((account) => (
-                                                        <option key={account.id} value={account.id}>
-                                                            {account.name}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            </label>
-                                            <label className="flex items-center gap-1 text-xs text-neutral-500">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={bankAccount.ignored}
-                                                    onChange={(e) => toggleIgnore(bankAccount.id, e.target.checked)}
-                                                    className="h-4 w-4"
-                                                />
-                                                Ignorer
-                                            </label>
-                                        </div>
+                                        <label className="text-xs text-neutral-500">
+                                            Budsjettkonto
+                                            <select
+                                                value={bankAccount.account_id ?? ''}
+                                                onChange={(e) =>
+                                                    setLink(
+                                                        bankAccount.id,
+                                                        e.target.value ? Number(e.target.value) : null,
+                                                    )
+                                                }
+                                                className="ml-2 rounded-lg border border-neutral-300 px-2 py-1 text-sm focus:border-neutral-900 focus:outline-none"
+                                            >
+                                                <option value="">Ikke koblet</option>
+                                                {accounts.map((account) => (
+                                                    <option key={account.id} value={account.id}>
+                                                        {account.name}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </label>
                                     </li>
                                 ))}
                             </ul>
                         </section>
-                    ))}
+                        );
+                    })}
                 </div>
             )}
+
+            {disconnecting && (
+                <DisconnectModal
+                    connection={disconnecting}
+                    onClose={() => setDisconnecting(null)}
+                    onConfirm={confirmDisconnect}
+                />
+            )}
         </Layout>
+    );
+}
+
+/** Fargetoner per rapportlinje-status fra banksynk-jobben. */
+const REPORT_TONE: Record<string, { dot: string; text: string }> = {
+    info: { dot: 'bg-neutral-300', text: 'text-neutral-500' },
+    warn: { dot: 'bg-amber-400', text: 'text-amber-700' },
+    error: { dot: 'bg-red-500', text: 'text-red-600' },
+};
+
+/** Resultatkort etter en banksynk: oppsummering + linjevis rapport, kan lukkes. */
+function SyncResultCard({ result, onClose }: { result: SyncResult; onClose: () => void }) {
+    const hasErrors = result.report.some((line) => line.status === 'error');
+    const count = result.imported_count;
+
+    return (
+        <div className="mt-4 overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">
+            <div className="flex items-start justify-between gap-3 border-b border-neutral-100 px-4 py-3">
+                <div className="flex items-center gap-2.5">
+                    <span
+                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-lg ${
+                            hasErrors ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
+                        }`}
+                        aria-hidden
+                    >
+                        {hasErrors ? '⚠️' : '✅'}
+                    </span>
+                    <div>
+                        <p className="font-medium text-neutral-900">
+                            {hasErrors ? 'Synk fullført med merknader' : 'Synk fullført'}
+                        </p>
+                        <p className="text-xs text-neutral-500">
+                            {count} {count === 1 ? 'ny transaksjon' : 'nye transaksjoner'} importert
+                        </p>
+                    </div>
+                </div>
+                <button
+                    onClick={onClose}
+                    aria-label="Lukk"
+                    className="-mr-1 rounded-lg p-1 text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-900"
+                >
+                    ✕
+                </button>
+            </div>
+            {result.report.length > 0 && (
+                <ul className="px-4 py-2 text-sm">
+                    {result.report.map((line, i) =>
+                        line.status === 'header' ? (
+                            <li
+                                key={i}
+                                className="pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-neutral-700 first:pt-1"
+                            >
+                                {line.message}
+                            </li>
+                        ) : (
+                            <li key={i} className="flex items-start gap-2 py-1">
+                                <span
+                                    className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${
+                                        (REPORT_TONE[line.status] ?? REPORT_TONE.info).dot
+                                    }`}
+                                    aria-hidden
+                                />
+                                <span className={(REPORT_TONE[line.status] ?? REPORT_TONE.info).text}>
+                                    {line.message}
+                                </span>
+                            </li>
+                        ),
+                    )}
+                </ul>
+            )}
+        </div>
+    );
+}
+
+/** Bekreftelse før en banktilkobling kobles fra (importerte transaksjoner beholdes). */
+function DisconnectModal({
+    connection,
+    onClose,
+    onConfirm,
+}: {
+    connection: BankConnection;
+    onClose: () => void;
+    onConfirm: () => Promise<void>;
+}) {
+    const [busy, setBusy] = useState(false);
+
+    async function submit() {
+        setBusy(true);
+        try {
+            await onConfirm();
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    return (
+        <Modal
+            title="Koble fra banken?"
+            size="sm"
+            onClose={onClose}
+            footer={
+                <>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        disabled={busy}
+                        className="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-500 hover:bg-neutral-100 disabled:opacity-50"
+                    >
+                        Avbryt
+                    </button>
+                    <button
+                        type="button"
+                        onClick={submit}
+                        disabled={busy}
+                        className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                    >
+                        {busy ? 'Kobler fra …' : 'Koble fra'}
+                    </button>
+                </>
+            }
+        >
+            <p className="text-sm text-neutral-600">
+                Vil du koble fra <span className="font-medium text-neutral-800">{connection.name}</span>?
+                Importerte transaksjoner beholdes, men fremtidig synk stoppes.
+            </p>
+        </Modal>
     );
 }

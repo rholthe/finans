@@ -14,6 +14,8 @@ class AppSettings
 
     public const AUTO_SYNC_DAYS = 'auto_sync_days';
 
+    public const REPORT_EMAIL = 'report_email';
+
     /** @var array<string, int> */
     public const DEFAULTS = [
         self::MANUAL_SYNC_DAYS => 10,
@@ -33,6 +35,13 @@ class AppSettings
         return $value !== null ? (int) $value : (self::DEFAULTS[$key] ?? 0);
     }
 
+    public static function string(string $key): ?string
+    {
+        $value = Setting::query()->where('key', $key)->value('value');
+
+        return $value !== null && $value !== '' ? (string) $value : null;
+    }
+
     public static function set(string $key, int|string $value): void
     {
         Setting::updateOrCreate(['key' => $key], ['value' => (string) $value]);
@@ -49,13 +58,23 @@ class AppSettings
     }
 
     /**
-     * @return array{manual_sync_days: int, auto_sync_days: int}
+     * Mottaker av synk- og utløpsrapporter. Innstillingen vinner; faller tilbake
+     * til `BANK_SYNC_REPORT_EMAIL` i config (legacy) hvis den ikke er satt.
+     */
+    public static function reportEmail(): ?string
+    {
+        return self::string(self::REPORT_EMAIL) ?? (config('gocardless.report_email') ?: null);
+    }
+
+    /**
+     * @return array{manual_sync_days: int, auto_sync_days: int, report_email: ?string}
      */
     public static function all(): array
     {
         return [
             self::MANUAL_SYNC_DAYS => self::manualSyncDays(),
             self::AUTO_SYNC_DAYS => self::autoSyncDays(),
+            self::REPORT_EMAIL => self::reportEmail(),
         ];
     }
 }

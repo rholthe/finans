@@ -427,6 +427,12 @@ export async function connectBank(
     return res.data.link;
 }
 
+/** Starter en fornying av en eksisterende tilkobling; returnerer samtykke-lenken. */
+export async function renewBankConnection(id: number): Promise<string> {
+    const res = await api.post<{ link: string }>(`/bank/connections/${id}/renew`);
+    return res.data.link;
+}
+
 export async function linkBankAccount(
     id: number,
     payload: { account_id?: number | null; ignored?: boolean },

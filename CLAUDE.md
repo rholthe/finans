@@ -135,10 +135,21 @@ Banking for prod-app-godkjenning.
   er `locked` (kan ikke redigeres) og slettes samlet. Brukes bl.a. til å betale ned kredittkort
   (budsjett↔budsjett). Manuell overføring, planlagt overføring og overføringsregel deler samme tjeneste.
 - **Banksynk:** deduplisering per `account_id:external_id` (samme external_id kan gjelde flere
-  kontoer). Rapport-e-post sendes til `BANK_SYNC_REPORT_EMAIL` ved både suksess og feil. GoCardless
+  kontoer). Rapport-e-post sendes ved både suksess og feil til `AppSettings::reportEmail()` –
+  innstillingen `report_email` (satt under Innstillinger) vinner, med `BANK_SYNC_REPORT_EMAIL` i
+  config som legacy-fallback. GoCardless
   oppgir rate-limit i headere (`X-RateLimit-Account-Success-*`); Enable Banking gjør **ikke** det –
   kun `429` signaliserer grensen, som fanges (`BankRateLimitException`) og markerer kontoen ikke-
   synkbar til neste runde.
+- **Samtykkeutløp + fornying:** et bank-samtykke varer typisk 90 dager. `BankConsent` bærer en
+  normalisert `expiresAt` (GoCardless: end-user-agreement `accepted` + `access_valid_for_days`;
+  Enable Banking: session-ens `access.valid_until`), som lagres som `bank_connections.valid_until`
+  ved tilkobling og oppdateres ved hver synk. `bank:check-expiry` (scheduler, daglig 06:00) sender
+  e-post til `AppSettings::reportEmail()` når utløp er < `BANK_CONSENT_EXPIRY_WARNING_DAYS` (default 7)
+  unna – idempotent via `expiry_notified_at` (nullstilles når `valid_until` flyttes). **Fornying**
+  (`POST bank/connections/{id}/renew` → ny samtykkeflyt merket i økten med `bank_renew_connection_id`)
+  gjenbruker den eksisterende tilkoblingen i callback: oppdaterer consent/utløp og re-mapper nye
+  eksterne konto-id-er til eksisterende `bank_accounts` via IBAN, så budsjettkoblingene overlever.
 - **Ingen YNAB-lengdegrenser** på payee/memo lenger. **Kun NOK** i første omgang.
 
 ## Faseplan
@@ -149,7 +160,7 @@ Banking for prod-app-godkjenning.
 3. ✅ Mål + auto-allokering (sparemål, fyll opp til mål / dekk overtrekk)
 4. ✅ Bankintegrasjon (GoCardless bak `BankDataProvider`)
 5. ✅ Auto-kategorisering (regelmotor: payee + memo + kategori, med avgrenset anvendelse + lås)
-6. ✅ Nattlig sync-jobb (kø + scheduler) + innstillinger (synk-dager) + gjenstående synk
+6. ✅ Nattlig sync-jobb (kø + scheduler) + innstillinger (synk-dager + rapport-e-post) + gjenstående synk
 7. ✅ Planlagte/repeterende transaksjoner (regningsmodul: frekvens, auto-postering, projeksjon).
    Støtter også planlagte **overføringer** (`transfer_account_id`) og RTA-mål.
 8. 🟡 Avansert:

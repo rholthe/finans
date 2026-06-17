@@ -5,6 +5,7 @@ import { apiErrorMessage, getSettings, updateSettings } from '@/lib/data';
 export default function Innstillinger() {
     const [manualDays, setManualDays] = useState('10');
     const [autoDays, setAutoDays] = useState('5');
+    const [reportEmail, setReportEmail] = useState('');
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
     const [notice, setNotice] = useState<string | null>(null);
@@ -15,6 +16,7 @@ export default function Innstillinger() {
             .then((s) => {
                 setManualDays(String(s.manual_sync_days));
                 setAutoDays(String(s.auto_sync_days));
+                setReportEmail(s.report_email ?? '');
             })
             .finally(() => setLoading(false));
     }, []);
@@ -28,6 +30,7 @@ export default function Innstillinger() {
             await updateSettings({
                 manual_sync_days: Number(manualDays),
                 auto_sync_days: Number(autoDays),
+                report_email: reportEmail.trim() || null,
             });
             setNotice('Innstillinger lagret.');
         } catch (err) {
@@ -80,6 +83,25 @@ export default function Innstillinger() {
                             className="mt-1 w-32 rounded-lg border border-neutral-300 px-3 py-2 focus:border-neutral-900 focus:outline-none"
                         />
                         <span className="ml-2 text-xs text-neutral-400">1–10</span>
+                    </label>
+
+                    <div className="border-t border-neutral-100 pt-5">
+                        <h2 className="text-sm font-semibold text-neutral-800">Synkrapport på e-post</h2>
+                        <p className="mt-1 text-xs text-neutral-500">
+                            Adressen som mottar rapport etter hver synk, og varsel når en
+                            bankgodkjenning snart utløper. La stå tom for å skru av.
+                        </p>
+                    </div>
+
+                    <label className="block text-sm font-medium text-neutral-700">
+                        Mottaker
+                        <input
+                            type="email"
+                            value={reportEmail}
+                            onChange={(e) => setReportEmail(e.target.value)}
+                            placeholder="din@epost.no"
+                            className="mt-1 w-full max-w-sm rounded-lg border border-neutral-300 px-3 py-2 focus:border-neutral-900 focus:outline-none"
+                        />
                     </label>
 
                     <div className="flex items-center gap-3">

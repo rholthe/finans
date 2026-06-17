@@ -152,11 +152,14 @@ class EnableBankingProvider implements BankDataProvider
             $session['accounts'] ?? [],
         ));
 
+        $validUntil = data_get($session, 'access.valid_until');
+
         return new BankConsent(
             id: $sessionId,
             linked: in_array($status, ['AUTHORIZED', 'VALID'], true),
             status: $status,
             accountIds: array_values(array_filter($accountIds)),
+            expiresAt: $validUntil ? CarbonImmutable::parse($validUntil) : null,
         );
     }
 

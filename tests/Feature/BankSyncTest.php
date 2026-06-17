@@ -92,6 +92,20 @@ class BankSyncTest extends TestCase
         Mail::assertSent(SyncReportMail::class);
     }
 
+    public function test_synk_lagrer_samtykkeutlop_paa_tilkoblingen(): void
+    {
+        $bankAccount = $this->linkedAccount();
+        $this->provider->consents['req1'] = [
+            'status' => 'LN',
+            'accounts' => ['acc1'],
+            'valid_until' => now()->addDays(90)->toDateTimeString(),
+        ];
+
+        $this->sync();
+
+        $this->assertNotNull($bankAccount->bankConnection->fresh()->valid_until);
+    }
+
     public function test_regel_setter_payee_og_kategori_ved_import(): void
     {
         $bankAccount = $this->linkedAccount();

@@ -13,7 +13,20 @@ class BankConnection extends Model
         'name',
         'consent_id',
         'status',
+        'valid_until',
+        'expiry_notified_at',
     ];
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'valid_until' => 'datetime',
+            'expiry_notified_at' => 'datetime',
+        ];
+    }
 
     /**
      * @return HasMany<BankAccount, $this>

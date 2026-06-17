@@ -14,3 +14,6 @@ Schedule::command('transactions:post-due')->dailyAt('00:05')->withoutOverlapping
 
 // Nattlig banksynk: legg den køede jobben i kø (auto-trigger → auto_sync_days).
 Schedule::job(new SyncBankTransactionsJob(trigger: 'auto'))->dailyAt('05:00');
+
+// Varsle om bankgodkjenninger som snart utløper (etter synk har oppdatert valid_until).
+Schedule::command('bank:check-expiry')->dailyAt('06:00')->withoutOverlapping();

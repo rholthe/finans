@@ -77,6 +77,7 @@ Route::prefix('api')->group(function () {
         Route::get('bank/institutions', [BankController::class, 'institutions']);
         Route::get('bank/connections', [BankController::class, 'connections']);
         Route::post('bank/connect', [BankController::class, 'connect']);
+        Route::post('bank/connections/{bankConnection}/renew', [BankController::class, 'renew']);
         Route::get('bank/callback', [BankController::class, 'callback']);
         Route::put('bank/accounts/{bankAccount}', [BankController::class, 'linkAccount']);
         Route::delete('bank/connections/{bankConnection}', [BankController::class, 'deleteConnection']);

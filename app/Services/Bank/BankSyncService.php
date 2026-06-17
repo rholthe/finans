@@ -132,7 +132,18 @@ class BankSyncService
             return;
         }
 
-        $connection->update(['status' => $consent->status]);
+        $connection->status = $consent->status;
+
+        // Oppdater utløp når leverandøren oppgir det; nullstill utløpsvarselet
+        // hvis vinduet har flyttet seg (f.eks. etter fornying) så et nytt varsel
+        // kan sendes for det nye vinduet.
+        if ($consent->expiresAt !== null
+            && (! $connection->valid_until || ! $connection->valid_until->equalTo($consent->expiresAt))) {
+            $connection->valid_until = $consent->expiresAt;
+            $connection->expiry_notified_at = null;
+        }
+
+        $connection->save();
 
         if (! $consent->linked) {
             $this->line('warn', __('Hopper over: tilkoblingen er ikke linket (status: :status).', [
@@ -339,10 +350,10 @@ class BankSyncService
 
     private function sendReport(SyncEvent $event): void
     {
-        $email = config('gocardless.report_email');
+        $email = AppSettings::reportEmail();
 
         if (empty($email)) {
-            Log::info('Ingen BANK_SYNC_REPORT_EMAIL satt – hopper over rapport-e-post.');
+            Log::info('Ingen rapport-e-post satt (innstilling/BANK_SYNC_REPORT_EMAIL) – hopper over rapport-e-post.');
 
             return;
         }
