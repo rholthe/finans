@@ -27,7 +27,7 @@ class BankSyncTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        config(['gocardless.report_email' => 'rapport@example.test', 'gocardless.sync_days' => 90]);
+        config(['gocardless.report_email' => 'rapport@example.test']);
         Mail::fake();
 
         $this->provider = new FakeBankProvider;

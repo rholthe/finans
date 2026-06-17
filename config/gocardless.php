@@ -20,9 +20,6 @@ return [
     'secret_key' => env('GOCARDLESS_SECRET_KEY'),
     'sandbox_bank' => env('GOCARDLESS_SANDBOX_BANK', 'SANDBOXFINANCE_SFIN0000'),
 
-    // Antall dager bakover synken henter transaksjoner for.
-    'sync_days' => (int) env('BANK_SYNC_DAYS', 90),
-
     // E-postadresse rapporten sendes til etter hver synk (vellykket og mislykket).
     // Samme adresse mottar varsel om at en bankgodkjenning snart utløper.
     'report_email' => env('BANK_SYNC_REPORT_EMAIL'),
