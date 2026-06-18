@@ -8,6 +8,7 @@ import { ACCOUNT_TYPE_LABELS, type Account, type AccountType } from '@/types';
 const ACCOUNT_TYPE_ICON: Record<AccountType, string> = {
     cash: '💵',
     bank: '🏦',
+    saving: '🐷',
     credit: '💳',
     loan: '🏠',
 };

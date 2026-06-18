@@ -1,4 +1,4 @@
-export type AccountType = 'cash' | 'bank' | 'credit' | 'loan';
+export type AccountType = 'cash' | 'bank' | 'saving' | 'credit' | 'loan';
 
 export interface Account {
     id: number;
@@ -249,6 +249,7 @@ export interface ScheduledTransaction {
 export const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
     cash: 'Kontant',
     bank: 'Bank',
+    saving: 'Sparing',
     credit: 'Kredittkort',
     loan: 'Lån',
 };

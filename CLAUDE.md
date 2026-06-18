@@ -165,7 +165,7 @@ Banking for prod-app-godkjenning.
 ## Faseplan
 
 0. ✅ Fundament: auth, layout, API, tester
-1. ✅ Manuelt regnskap: kontoer (cash/bank/credit/loan, aktiv vs overvåket), transaksjoner, saldoer
+1. ✅ Manuelt regnskap: kontoer (cash/bank/saving/credit/loan, aktiv vs overvåket), transaksjoner, saldoer
 2. ✅ Budsjettmotor: kategorigrupper/kategorier, månedlig tildeling, activity/available, Ready to Assign
 3. ✅ Mål + auto-allokering (sparemål, fyll opp til mål / dekk overtrekk)
 4. ✅ Bankintegrasjon (GoCardless bak `BankDataProvider`)

@@ -55,6 +55,19 @@ class AccountTest extends TestCase
         $this->assertDatabaseHas('accounts', ['name' => 'Sparekonto', 'type' => 'bank']);
     }
 
+    public function test_oppretter_sparekonto(): void
+    {
+        $this->postJson('/api/accounts', [
+            'name' => 'BSU',
+            'type' => 'saving',
+            'on_budget' => true,
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.type', 'saving');
+
+        $this->assertDatabaseHas('accounts', ['name' => 'BSU', 'type' => 'saving']);
+    }
+
     public function test_startsaldo_blir_egen_transaksjon(): void
     {
         $response = $this->postJson('/api/accounts', [

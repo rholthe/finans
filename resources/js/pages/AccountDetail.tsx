@@ -40,6 +40,7 @@ const PER_PAGE_OPTIONS = [25, 50, 100, 200, 500];
 const ACCOUNT_TYPE_ICON: Record<AccountType, string> = {
     cash: '💵',
     bank: '🏦',
+    saving: '🐷',
     credit: '💳',
     loan: '🏠',
 };
