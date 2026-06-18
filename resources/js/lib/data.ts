@@ -206,6 +206,11 @@ export async function createCategoryGroup(name: string): Promise<CategoryGroup> 
     return res.data.data;
 }
 
+export async function updateCategoryGroup(id: number, name: string): Promise<CategoryGroup> {
+    const res = await api.put<Wrapped<CategoryGroup>>(`/category-groups/${id}`, { name });
+    return res.data.data;
+}
+
 export async function deleteCategoryGroup(id: number): Promise<void> {
     await api.delete(`/category-groups/${id}`);
 }
@@ -215,6 +220,11 @@ export async function createCategory(categoryGroupId: number, name: string): Pro
         category_group_id: categoryGroupId,
         name,
     });
+    return res.data.data;
+}
+
+export async function updateCategory(id: number, name: string): Promise<Category> {
+    const res = await api.put<Wrapped<Category>>(`/categories/${id}`, { name });
     return res.data.data;
 }
 

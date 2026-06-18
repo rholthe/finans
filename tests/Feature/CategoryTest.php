@@ -68,6 +68,17 @@ class CategoryTest extends TestCase
             ->assertJsonPath('data.name', 'Ny');
     }
 
+    public function test_oppdaterer_gruppenavn(): void
+    {
+        $group = CategoryGroup::factory()->create(['name' => 'Månedlige utgifter']);
+
+        $this->putJson("/api/category-groups/{$group->id}", ['name' => 'Periodiske utgifter'])
+            ->assertOk()
+            ->assertJsonPath('data.name', 'Periodiske utgifter');
+
+        $this->assertDatabaseHas('category_groups', ['id' => $group->id, 'name' => 'Periodiske utgifter']);
+    }
+
     public function test_sletting_av_gruppe_fjerner_kategorier(): void
     {
         $group = CategoryGroup::factory()->create();

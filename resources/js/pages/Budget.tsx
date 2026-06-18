@@ -8,6 +8,7 @@ import {
     type ReactNode,
 } from 'react';
 import { Link } from 'react-router-dom';
+import InlineNameEdit from '@/components/InlineNameEdit';
 import Layout from '@/components/Layout';
 import Modal from '@/components/Modal';
 import {
@@ -24,6 +25,8 @@ import {
     resetAssignments,
     setGoal,
     sweepBudget,
+    updateCategory,
+    updateCategoryGroup,
     type AutoAssignStrategy,
     type GoalInput,
 } from '@/lib/data';
@@ -412,7 +415,16 @@ function Group({
                     onChange={() => onToggleGroup(group)}
                     ariaLabel={`Velg gruppen ${group.name}`}
                 />
-                <span className="flex-1 truncate text-sm font-semibold text-neutral-800">{group.name}</span>
+                <InlineNameEdit
+                    display={group.name}
+                    initial={group.name}
+                    placeholder="Gruppenavn"
+                    onSave={async (name) => {
+                        await updateCategoryGroup(group.id, name);
+                        reload();
+                    }}
+                    className="min-w-0 flex-1 text-sm font-semibold text-neutral-800"
+                />
                 <span className="text-sm font-semibold tabular-nums text-neutral-600">
                     {formatNok(group.available)}
                 </span>
@@ -506,7 +518,16 @@ function CategoryRow({
                 <TriCheckbox checked={selected} onChange={onToggle} ariaLabel={`Velg ${category.name}`} />
                 <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                        <span className="truncate text-sm">{category.name}</span>
+                        <InlineNameEdit
+                            display={category.name}
+                            initial={category.name}
+                            placeholder="Kategorinavn"
+                            onSave={async (name) => {
+                                await updateCategory(category.id, name);
+                                reload();
+                            }}
+                            className="min-w-0 text-sm"
+                        />
                         <button
                             onClick={() => setEditingGoal((v) => !v)}
                             title={category.goal ? 'Rediger mål' : 'Sett mål'}

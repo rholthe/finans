@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import InlineNameEdit from '@/components/InlineNameEdit';
 import Layout from '@/components/Layout';
 import Modal from '@/components/Modal';
 import {
@@ -479,90 +480,6 @@ function SyncResultCard({ result, onClose }: { result: SyncResult; onClose: () =
                 </ul>
             )}
         </div>
-    );
-}
-
-/**
- * Inline-redigerbart visningsnavn (bank eller bankkonto). Viser navnet med en
- * diskret blyant ved hover; klikk bytter til et felt med lagre/avbryt.
- */
-function InlineNameEdit({
-    display,
-    initial,
-    placeholder,
-    onSave,
-    className,
-}: {
-    display: string;
-    initial: string;
-    placeholder?: string;
-    onSave: (name: string) => Promise<void>;
-    className?: string;
-}) {
-    const [editing, setEditing] = useState(false);
-    const [value, setValue] = useState(initial);
-    const [busy, setBusy] = useState(false);
-
-    async function submit() {
-        setBusy(true);
-        try {
-            await onSave(value.trim());
-            setEditing(false);
-        } finally {
-            setBusy(false);
-        }
-    }
-
-    if (!editing) {
-        return (
-            <span className={`group inline-flex items-center gap-1.5 ${className ?? ''}`}>
-                <span className="truncate">{display}</span>
-                <button
-                    type="button"
-                    onClick={() => {
-                        setValue(initial);
-                        setEditing(true);
-                    }}
-                    aria-label="Endre navn"
-                    className="shrink-0 text-neutral-300 opacity-0 transition group-hover:opacity-100 hover:text-neutral-700"
-                >
-                    ✏️
-                </button>
-            </span>
-        );
-    }
-
-    return (
-        <span className="inline-flex items-center gap-1.5">
-            <input
-                autoFocus
-                value={value}
-                placeholder={placeholder}
-                disabled={busy}
-                onChange={(e) => setValue(e.target.value)}
-                onKeyDown={(e) => {
-                    if (e.key === 'Enter') submit();
-                    if (e.key === 'Escape') setEditing(false);
-                }}
-                className="rounded-lg border border-neutral-300 px-2 py-1 text-sm focus:border-neutral-900 focus:outline-none"
-            />
-            <button
-                type="button"
-                onClick={submit}
-                disabled={busy}
-                className="text-xs font-medium text-sky-600 hover:text-sky-800 disabled:opacity-50"
-            >
-                Lagre
-            </button>
-            <button
-                type="button"
-                onClick={() => setEditing(false)}
-                disabled={busy}
-                className="text-xs text-neutral-400 hover:text-neutral-700"
-            >
-                Avbryt
-            </button>
-        </span>
     );
 }
 
