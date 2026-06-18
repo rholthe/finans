@@ -140,6 +140,12 @@ Banking for prod-app-godkjenning.
   på budsjett-benet); **overvåket→budsjett** er tilflyt (budsjett-benet får `rta=true`). Begge ben
   er `locked` (kan ikke redigeres) og slettes samlet. Brukes bl.a. til å betale ned kredittkort
   (budsjett↔budsjett). Manuell overføring, planlagt overføring og overføringsregel deler samme tjeneste.
+- **Payee-utledning (Enable Banking):** banken legger ofte ikke noe i de strukturerte
+  `creditor`/`debtor`-feltene, men putter motpartsnavnet i en `Overføring Innland/Utland, <navn>`-
+  linje i `remittance_information` (resten er kolonnepadet referansetekst). `EnableBankingProvider`
+  setter derfor payee til det strukturerte navnet når det finnes, ellers navnet fra den linja; all
+  whitespace-padding kollapses til enkle mellomrom så lengdegrensen ikke spises opp. `description`/
+  `memo` (regelmotorens matchegrunnlag) beholder fortsatt all tekst.
 - **Banksynk:** deduplisering per `account_id:external_id` (samme external_id kan gjelde flere
   kontoer). Rapport-e-post sendes ved både suksess og feil til `AppSettings::reportEmail()` –
   innstillingen `report_email` (satt under Innstillinger) vinner, med `BANK_SYNC_REPORT_EMAIL` i

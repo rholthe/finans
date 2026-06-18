@@ -176,7 +176,10 @@ class EnableBankingProvider implements BankDataProvider
             $amount = -abs($amount);
         }
 
+        // Full info-tekst (regelmatch-grunnlag + memo) og et eget, mer presist
+        // motpartsnavn til payee.
         $info = $this->infoString($raw);
+        $payee = $this->resolvePayee($raw) ?? Str::limit($info, 255, '');
 
         return new NormalizedTransaction(
             externalId: (string) ($raw['entry_reference'] ?? $raw['transaction_id'] ?? Str::uuid()),
@@ -184,7 +187,7 @@ class EnableBankingProvider implements BankDataProvider
             amount: $amount,
             currency: (string) data_get($raw, 'transaction_amount.currency', 'NOK'),
             description: $info,
-            payee: Str::limit($info, 255, ''),
+            payee: Str::limit($payee, 255, ''),
             memo: $info,
             booked: strtoupper((string) ($raw['status'] ?? 'BOOK')) === 'BOOK',
             raw: $raw,
@@ -192,22 +195,85 @@ class EnableBankingProvider implements BankDataProvider
     }
 
     /**
-     * Motpartsnavn + meldingstekst som payee/memo utledes fra.
+     * Full info-tekst (motpartsnavn + alle meldingslinjer), med normalisert
+     * whitespace. Brukes som memo og som regelmotorens matchegrunnlag, så alt
+     * av tekst beholdes – men bankens kolonnepadding kollapses til enkle
+     * mellomrom så lengdegrensen ikke spises opp av fyll.
      *
      * @param  array<string, mixed>  $raw
      */
     private function infoString(array $raw): string
     {
-        $remittance = data_get($raw, 'remittance_information');
-        if (is_array($remittance)) {
-            $remittance = implode(' ', array_filter($remittance));
+        $parts = array_merge([$this->structuredParty($raw)], $this->remittanceLines($raw));
+        $info = $this->collapse(implode(' ', array_filter($parts)));
+
+        return $info !== '' ? $info : 'Ukjent';
+    }
+
+    /**
+     * Motpartsnavn til payee: bruk det strukturerte feltet når banken oppgir det
+     * (typisk kortkjøp), ellers trekk navnet ut av «Overføring Innland/Utland,
+     * <navn>»-linjen Norske banker legger i meldingsinformasjonen. Null = ingen
+     * tydelig motpart funnet (faller tilbake på info-teksten).
+     *
+     * @param  array<string, mixed>  $raw
+     */
+    private function resolvePayee(array $raw): ?string
+    {
+        $structured = $this->collapse((string) $this->structuredParty($raw));
+        if ($structured !== '') {
+            return $structured;
         }
 
-        $party = strtoupper((string) ($raw['credit_debit_indicator'] ?? 'DBIT')) === 'DBIT'
+        foreach ($this->remittanceLines($raw) as $line) {
+            if (preg_match('/^Overføring (?:Innland|Utland),\s*(.+)$/iu', $line, $m)) {
+                return trim($m[1]);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Strukturert motpartsnavn: kreditor ved utbetaling (DBIT), debitor ved
+     * innbetaling (CRDT).
+     *
+     * @param  array<string, mixed>  $raw
+     */
+    private function structuredParty(array $raw): ?string
+    {
+        $name = strtoupper((string) ($raw['credit_debit_indicator'] ?? 'DBIT')) === 'DBIT'
             ? data_get($raw, 'creditor.name')
             : data_get($raw, 'debtor.name');
 
-        return trim(implode(' ', array_filter([$party, $remittance]))) ?: 'Ukjent';
+        return $name !== null ? (string) $name : null;
+    }
+
+    /**
+     * Meldingslinjer, hver med kollapset whitespace og tomme linjer fjernet.
+     *
+     * @param  array<string, mixed>  $raw
+     * @return list<string>
+     */
+    private function remittanceLines(array $raw): array
+    {
+        $remittance = data_get($raw, 'remittance_information', []);
+        if (! is_array($remittance)) {
+            $remittance = [$remittance];
+        }
+
+        return array_values(array_filter(array_map(
+            fn ($line): string => $this->collapse((string) $line),
+            $remittance,
+        )));
+    }
+
+    /**
+     * Kollaps alle whitespace-sekvenser (bankens kolonnepadding) til ett mellomrom.
+     */
+    private function collapse(string $value): string
+    {
+        return trim((string) preg_replace('/\s+/u', ' ', $value));
     }
 
     /**

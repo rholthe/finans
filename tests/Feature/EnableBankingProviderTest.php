@@ -114,6 +114,38 @@ class EnableBankingProviderTest extends TestCase
         $this->assertStringContainsString('REMA 1000', $result[0]->payee);
     }
 
+    public function test_payee_hentes_fra_overforing_linje_naar_strukturert_navn_mangler(): void
+    {
+        // DNB-mønster: ingen strukturert kreditor/debitor, motpartsnavnet ligger i
+        // «Overføring Innland, <navn>»-linja, og referanselinja er kolonnepadet.
+        Http::fake([
+            'eb.test/accounts/acc-1/transactions*' => Http::response(['transactions' => [
+                [
+                    'transaction_id' => 'elvia-1',
+                    'booking_date' => '2026-06-17',
+                    'transaction_amount' => ['amount' => '478.77', 'currency' => 'NOK'],
+                    'credit_debit_indicator' => 'CRDT',
+                    'creditor' => null,
+                    'debtor' => null,
+                    'remittance_information' => [
+                        'Faktureringsavtaleid: 85570          Fakturanr: 39259312          Leveringsadresse: Åsfaret 7A',
+                        'Overføring Innland, Elvia As',
+                    ],
+                ],
+            ]]),
+        ]);
+
+        $result = (new EnableBankingProvider)->getTransactions('acc-1', 'DNB', '2026-06-01');
+
+        $this->assertCount(1, $result);
+        // Motpart trukket ut som payee (ikke referansetallene).
+        $this->assertSame('Elvia As', $result[0]->payee);
+        // Full info (regelgrunnlag) beholder alt, men uten kolonnepadding.
+        $this->assertStringContainsString('Elvia As', $result[0]->description);
+        $this->assertStringContainsString('Fakturanr: 39259312', $result[0]->description);
+        $this->assertStringNotContainsString('  ', $result[0]->description);
+    }
+
     public function test_reservert_transaksjon_markeres_ikke_bokfoert(): void
     {
         Http::fake([
