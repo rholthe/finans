@@ -47,15 +47,22 @@ class Goal extends Model
      *
      * @param  string  $month  «YYYY-MM»
      * @param  float  $assignedThisMonth  Allerede tildelt denne måneden
-     * @param  float  $available  Tilgjengelig nå (inkl. denne månedens tildeling + rullering)
+     * @param  float  $available  Tilgjengelig nå (inkl. denne månedens tildeling + rullering − forbruk)
+     * @param  float  $availableAtStart  Tilgjengelig ved månedsstart = rullering fra forrige måned +
+     *                                   tildelt denne måneden (denne månedens forbruk teller ikke)
      */
-    public function neededThisMonth(string $month, float $assignedThisMonth, float $available): float
+    public function neededThisMonth(string $month, float $assignedThisMonth, float $available, float $availableAtStart): float
     {
         $target = (float) $this->target_amount;
 
         $needed = match ($this->type) {
             GoalType::Monthly => $target - $assignedThisMonth,
-            GoalType::TargetBalance => $target - $available,
+            // Mål: ha målbeløpet tilgjengelig denne måneden (typisk løpende utgift
+            // som dagligvarer). Rullering fra forrige måned + tildelt denne dekker
+            // målet; denne månedens forbruk teller ikke (lagt tilbake i
+            // availableAtStart), så man kan bruke fritt av beløpet uten at målet
+            // blir uoppfylt.
+            GoalType::TargetBalance => $target - $availableAtStart,
             GoalType::TargetBalanceByDate => $this->pacedNeed($month, $target, $assignedThisMonth, $available),
         };
 

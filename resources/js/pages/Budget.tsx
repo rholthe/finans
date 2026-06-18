@@ -471,7 +471,7 @@ function goalSummary(goal: Goal): string {
         case 'monthly':
             return `Mål: ${formatNok(goal.target_amount)} hver måned`;
         case 'target_balance':
-            return `Mål: spar ${formatNok(goal.target_amount)}`;
+            return `Mål: ha ${formatNok(goal.target_amount)} tilgjengelig hver måned`;
         case 'target_balance_by_date':
             return `Mål: spar ${formatNok(goal.target_amount)} innen ${
                 goal.target_date ? monthLabel(goal.target_date.slice(0, 7)) : '—'

@@ -52,6 +52,10 @@ class BudgetService
                     $assigned = (float) ($assignedThisMonth[$category->id] ?? 0);
                     $activity = (float) ($activityThisMonth[$category->id] ?? 0);
                     $available = (float) ($assignedCumulative[$category->id] ?? 0) + (float) ($activityCumulative[$category->id] ?? 0);
+                    // Tilgjengelig ved månedsstart: rullering fra forrige måned + tildelt
+                    // denne måneden, dvs. uten denne månedens forbruk (brukes av sparemål
+                    // som skal være forbruks-tolerante innenfor måneden).
+                    $availableAtStart = $available - $activity;
                     $upcoming = (float) ($upcomingByCategory[$category->id] ?? 0);
                     $month = $start->format('Y-m');
 
@@ -65,7 +69,7 @@ class BudgetService
                         'projected_available' => round($available + $upcoming, 2),
                         'goal' => $this->goalPayload($category->goal),
                         'needed' => $category->goal
-                            ? $category->goal->neededThisMonth($month, $assigned, $available)
+                            ? $category->goal->neededThisMonth($month, $assigned, $available, $availableAtStart)
                             : 0.0,
                     ];
                 })->all();

@@ -117,7 +117,7 @@ export interface Goal {
 
 export const GOAL_TYPE_LABELS: Record<GoalType, string> = {
     monthly: 'Fyll opp hver måned',
-    target_balance: 'Spar opp til beløp',
+    target_balance: 'Ha tilgjengelig hver måned',
     target_balance_by_date: 'Spar opp til beløp innen dato',
 };
 

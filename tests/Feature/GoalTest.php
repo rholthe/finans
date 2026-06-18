@@ -104,6 +104,37 @@ class GoalTest extends TestCase
             ->assertJsonPath('groups.0.categories.0.needed', 0);
     }
 
+    public function test_target_balance_krediterer_rollover_og_ignorerer_maanedens_forbruk(): void
+    {
+        // Løpende utgift (f.eks. dagligvarer): ha 14000 tilgjengelig hver måned.
+        $category = $this->category();
+        Goal::factory()->targetBalance(14000)->create(['category_id' => $category->id]);
+
+        // Bygg rullering: tildel 3000 i januar (uten forbruk) → ruller til februar.
+        $this->putJson("/api/budget/2026-01/categories/{$category->id}", ['assigned' => 3000]);
+
+        // Februar: rullering 3000 ⇒ trenger 11000 opp til 14000.
+        $this->getJson('/api/budget?month=2026-02')
+            ->assertJsonPath('groups.0.categories.0.needed', 11000);
+
+        // Tildel 11000 ⇒ 3000 + 11000 = 14000 tilgjengelig ved månedsstart ⇒ mål nådd.
+        $this->putJson("/api/budget/2026-02/categories/{$category->id}", ['assigned' => 11000]);
+        $this->getJson('/api/budget?month=2026-02')
+            ->assertJsonPath('groups.0.categories.0.needed', 0);
+
+        // Bruk 5000 i februar: forbruket teller ikke mot målet – fortsatt oppfylt –
+        // men reduserer faktisk tilgjengelig saldo.
+        Account::factory()->create(['on_budget' => true])
+            ->transactions()->create([
+                'category_id' => $category->id,
+                'date' => '2026-02-15',
+                'amount' => -5000,
+            ]);
+        $this->getJson('/api/budget?month=2026-02')
+            ->assertJsonPath('groups.0.categories.0.needed', 0)
+            ->assertJsonPath('groups.0.categories.0.available', 9000);
+    }
+
     public function test_datofestet_maal_fordeler_jevnt_over_gjenstaaende_maaneder(): void
     {
         $category = $this->category();

@@ -94,6 +94,12 @@ Banking for prod-app-godkjenning.
 - **«available» lagres aldri** — beregnes kumulativt (assigned + activity) i `BudgetService`,
   så redigering av historikk alltid gir korrekte tall. Samme for `needed` (mål) og kommende/
   projisert (planlagte poster).
+- **Mål (`GoalType`) og `needed` (`Goal::neededThisMonth`):** `monthly` = tildel et fast beløp hver
+  måned (`target − tildelt denne måneden`, rullering ignoreres). `target_balance` = ha målbeløpet
+  **tilgjengelig hver måned** (typisk løpende utgift som dagligvarer): `target − availableAtStart`,
+  der `availableAtStart` = rullering fra forrige måned + tildelt denne (= `available − denne månedens
+  activity`), så **månedens forbruk teller ikke** og man kan bruke fritt av beløpet uten at målet blir
+  uoppfylt. `target_balance_by_date` = spar opp til beløp innen dato (jevn pacing mot `available`).
 - **Ready to Assign = kun ukategoriserte inntekter − tildelt.** Kategorisert forbruk hører til
   kategoriens `available`, ikke RTA. Identiteten `RTA + Σtilgjengelig = penger på budsjettkonto`
   skal alltid holde (ingen lekkasje).
