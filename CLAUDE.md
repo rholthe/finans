@@ -167,6 +167,14 @@ Banking for prod-app-godkjenning.
   `config('app.display_timezone')` (`APP_DISPLAY_TIMEZONE`, default `Europe/Oslo`) med tidssone-
   etikett (CET/CEST).
 - **Ingen YNAB-lengdegrenser** på payee/memo lenger. **Kun NOK** i første omgang.
+- **Mobil hurtigregistrering:** `MobilRegistrer` (`/registrer`) er mobilens landingsside – åpnes
+  appen på smal skjerm (< `md`) sendes man én gang dit fra `/` (engangsflagg `mobileLandingDone` i
+  `Root.tsx`, nullstilles ved full sideinnlasting); etterpå viser `/` budsjettet som normalt, og en
+  «Registrer»-lenke (`md:hidden`) finnes i menyen. Siden har store knapper for å føre en transaksjon
+  på en **ikke-banksynket budsjettkonto** (kun `on_budget && !bank_synced && !closed` er velgbare –
+  overvåkede/synkede ekskluderes), dato forvalgt til i dag, obligatorisk mottaker + beløp (retning
+  Utgift/Inntekt → fortegn), valgfritt notat, og en bekreftelses-modal før lagring. Lager en
+  ukategorisert transaksjon (kategoriseres senere på desktop). Vises ikke på stor skjerm.
 
 ## Faseplan
 

@@ -13,12 +13,19 @@ export default function Layout({ children }: { children: ReactNode }) {
     return (
         <div className="min-h-screen bg-neutral-50 text-neutral-900">
             <header className="border-b border-neutral-200 bg-white">
-                <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
-                    <div className="flex items-center gap-6">
+                <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-6 py-4">
+                    <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
                         <Link to="/" className="text-lg font-semibold">
                             Finans
                         </Link>
-                        <nav className="flex items-center gap-1">
+                        <nav className="flex flex-wrap items-center gap-1">
+                            {/* Hurtigregistrering er mobilens landingsside; skjult på stor skjerm. */}
+                            <NavLink
+                                to="/registrer"
+                                className={(state) => `${navClass(state)} md:hidden`}
+                            >
+                                Registrer
+                            </NavLink>
                             <NavLink to="/" className={navClass} end>
                                 Budsjett
                             </NavLink>

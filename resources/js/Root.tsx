@@ -8,7 +8,26 @@ import Regler from '@/pages/Regler';
 import Innstillinger from '@/pages/Innstillinger';
 import Accounts from '@/pages/Accounts';
 import AccountDetail from '@/pages/AccountDetail';
+import MobilRegistrer from '@/pages/MobilRegistrer';
 import { lazy, Suspense, type ReactNode } from 'react';
+
+/** Smal skjerm = mobiltelefon (under Tailwind `md`). */
+function isMobileViewport(): boolean {
+    return typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches;
+}
+
+// Når appen åpnes på mobil sendes man én gang til hurtigregistreringen – den er
+// «første side» på telefon. Etterpå viser «/» budsjettet som vanlig (flagget
+// nullstilles kun ved full sideinnlasting, dvs. neste gang appen åpnes).
+let mobileLandingDone = false;
+
+function Home() {
+    if (!mobileLandingDone && isMobileViewport()) {
+        mobileLandingDone = true;
+        return <Navigate to="/registrer" replace />;
+    }
+    return <Budget />;
+}
 
 // Rapporter drar inn recharts; lastes først når siden besøkes (code-splitting).
 const Rapporter = lazy(() => import('@/pages/Rapporter'));
@@ -37,7 +56,8 @@ export default function App() {
             <BrowserRouter>
                 <Routes>
                     <Route path="/login" element={<GuestOnly><Login /></GuestOnly>} />
-                    <Route path="/" element={<RequireAuth><Budget /></RequireAuth>} />
+                    <Route path="/" element={<RequireAuth><Home /></RequireAuth>} />
+                    <Route path="/registrer" element={<RequireAuth><MobilRegistrer /></RequireAuth>} />
                     <Route path="/planlagte" element={<RequireAuth><Planlagte /></RequireAuth>} />
                     <Route path="/kontoer" element={<RequireAuth><Accounts /></RequireAuth>} />
                     <Route
