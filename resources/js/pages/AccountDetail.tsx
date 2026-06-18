@@ -73,10 +73,12 @@ export default function AccountDetail() {
     const [editingId, setEditingId] = useState<number | null>(null);
     const [ruleForTx, setRuleForTx] = useState<Transaction | null>(null);
     const [deletingTx, setDeletingTx] = useState<Transaction | null>(null);
-    // Bekreftelse før en avstemt transaksjon endres (rediger eller klarert-toggle).
+    // Bekreftelse før en avstemt transaksjon endres (rediger, klarert-toggle
+    // eller inline kategorisering). `placement` bæres for kategoriseringen.
     const [reconciledPending, setReconciledPending] = useState<{
-        kind: 'edit' | 'cleared';
+        kind: 'edit' | 'cleared' | 'categorize';
         tx: Transaction;
+        placement?: string;
     } | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
     const [showReconcile, setShowReconcile] = useState(false);
@@ -123,13 +125,34 @@ export default function AccountDetail() {
         setEditingId(tx.id);
     }
 
+    // Inline kategorisering fra nedtrekket: ''=ukategorisert, 'rta'=Klar til å
+    // fordele, ellers kategori-id. Splitt/øvrige endringer går via rediger-dialogen.
+    async function categorize(tx: Transaction, placement: string) {
+        if (tx.reconciled_at) {
+            setReconciledPending({ kind: 'categorize', tx, placement });
+            return;
+        }
+        await applyCategory(tx, placement);
+    }
+
+    async function applyCategory(tx: Transaction, placement: string) {
+        const rta = placement === 'rta';
+        await updateTransaction(tx.id, {
+            category_id: rta || placement === '' ? null : Number(placement),
+            rta,
+        });
+        await reload();
+    }
+
     async function confirmReconciledAction() {
         if (!reconciledPending) return;
-        const { kind, tx } = reconciledPending;
+        const { kind, tx, placement } = reconciledPending;
         setReconciledPending(null);
         if (kind === 'cleared') {
             await updateTransaction(tx.id, { cleared: !tx.cleared });
             reload();
+        } else if (kind === 'categorize') {
+            await applyCategory(tx, placement ?? '');
         } else {
             setEditingId(tx.id);
         }
@@ -465,6 +488,7 @@ export default function AccountDetail() {
                                             {!account.on_budget ? (
                                                 <span className="italic text-neutral-400">ikke behov</span>
                                             ) : tx.is_split ? (
+                                                // Splitt endres kun via rediger-dialogen.
                                                 <span
                                                     title={(tx.splits ?? [])
                                                         .map(
@@ -476,14 +500,22 @@ export default function AccountDetail() {
                                                 >
                                                     Delt ({tx.splits?.length ?? 0})
                                                 </span>
-                                            ) : tx.category_id ? (
-                                                categoryName.get(tx.category_id) ?? '—'
-                                            ) : tx.rta ? (
-                                                <span className="italic text-neutral-400">Tildelt RTA</span>
                                             ) : tx.transfer_id ? (
-                                                <span className="italic text-neutral-400">ikke behov</span>
+                                                // Overføringsben: kategori er låst av paret (kun splitt via dialog).
+                                                tx.category_id ? (
+                                                    (categoryName.get(tx.category_id) ?? '—')
+                                                ) : tx.rta ? (
+                                                    <span className="italic text-neutral-400">Tildelt RTA</span>
+                                                ) : (
+                                                    <span className="italic text-neutral-400">ikke behov</span>
+                                                )
                                             ) : (
-                                                '—'
+                                                // Vanlig transaksjon: sett kategori/RTA/ukategorisert direkte.
+                                                <InlineCategorySelect
+                                                    tx={tx}
+                                                    groups={groups}
+                                                    onChange={(placement) => categorize(tx, placement)}
+                                                />
                                             )}
                                         </td>
                                         <td className="px-4 py-2 text-center">
@@ -577,13 +609,67 @@ export default function AccountDetail() {
     );
 }
 
+/**
+ * Inline kategori-nedtrekk i transaksjonslista: ukategorisert / «Klar til å
+ * fordele» (RTA) / en konkret kategori. Splitt og øvrige endringer gjøres i
+ * rediger-dialogen. Verdien styres av tx (kontrollert), så et avbrutt valg
+ * (f.eks. avstemt-bekreftelse avbrytes) snapper tilbake til opprinnelig verdi.
+ */
+function InlineCategorySelect({
+    tx,
+    groups,
+    onChange,
+}: {
+    tx: Transaction;
+    groups: CategoryGroup[];
+    onChange: (placement: string) => Promise<void>;
+}) {
+    const [busy, setBusy] = useState(false);
+    const value = tx.rta ? 'rta' : String(tx.category_id ?? '');
+
+    async function handle(next: string) {
+        if (next === value) return;
+        setBusy(true);
+        try {
+            await onChange(next);
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    return (
+        <select
+            value={value}
+            disabled={busy}
+            onChange={(e) => handle(e.target.value)}
+            className={`max-w-[12rem] rounded border bg-transparent px-1.5 py-1 text-sm focus:border-neutral-900 focus:outline-none disabled:opacity-50 ${
+                value === ''
+                    ? 'border-neutral-200 italic text-neutral-400'
+                    : 'border-transparent text-neutral-700 hover:border-neutral-300'
+            }`}
+        >
+            <option value="">Ukategorisert</option>
+            <option value="rta">Klar til å fordele (RTA)</option>
+            {groups.map((group) => (
+                <optgroup key={group.id} label={group.name}>
+                    {group.categories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                            {category.name}
+                        </option>
+                    ))}
+                </optgroup>
+            ))}
+        </select>
+    );
+}
+
 /** Bekreftelse før en tidligere avstemt transaksjon endres (rediger eller klarert-toggle). */
 function ConfirmReconciledModal({
     kind,
     onClose,
     onConfirm,
 }: {
-    kind: 'edit' | 'cleared';
+    kind: 'edit' | 'cleared' | 'categorize';
     onClose: () => void;
     onConfirm: () => Promise<void>;
 }) {

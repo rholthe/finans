@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Account;
+use App\Models\Category;
 use App\Models\Transaction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -79,6 +80,35 @@ class TransactionTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.payee', 'Riktig')
             ->assertJsonPath('data.cleared', true);
+    }
+
+    public function test_inline_kategorisering_setter_kategori_rta_og_ukategorisert(): void
+    {
+        $account = Account::factory()->create(['on_budget' => true]);
+        $category = Category::factory()->create();
+        $tx = Transaction::factory()->for($account)->create([
+            'category_id' => null,
+            'rta' => false,
+            'amount' => -200,
+        ]);
+
+        // Sett en konkret kategori (nullstiller rta).
+        $this->patchJson("/api/transactions/{$tx->id}", ['category_id' => $category->id, 'rta' => false])
+            ->assertOk()
+            ->assertJsonPath('data.category_id', $category->id)
+            ->assertJsonPath('data.rta', false);
+
+        // Sett «Klar til å fordele» (RTA) – kategori nullstilles.
+        $this->patchJson("/api/transactions/{$tx->id}", ['category_id' => null, 'rta' => true])
+            ->assertOk()
+            ->assertJsonPath('data.category_id', null)
+            ->assertJsonPath('data.rta', true);
+
+        // Tilbake til ukategorisert.
+        $this->patchJson("/api/transactions/{$tx->id}", ['category_id' => null, 'rta' => false])
+            ->assertOk()
+            ->assertJsonPath('data.category_id', null)
+            ->assertJsonPath('data.rta', false);
     }
 
     public function test_sletter_transaksjon(): void

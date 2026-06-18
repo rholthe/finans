@@ -194,7 +194,9 @@ Banking for prod-app-godkjenning.
      komprimerte rader med mål-/gjelder-badges, stylet ny/rediger-modal og slett-bekreftelse (ingen
      `confirm()`); fjernet manuell prioritet/reorder og regelnavn (mest spesifikk regel vinner)
    - ✅ Kontodetaljsiden: hero-kort (accent budsjett/overvåket), slett- og «endre
-     avstemt»-bekreftelse som modaler (ingen `confirm()`)
+     avstemt»-bekreftelse som modaler (ingen `confirm()`); inline kategori-nedtrekk
+     (ukategorisert/RTA/kategori) direkte i raden for vanlige transaksjoner – splitt,
+     overføringer og øvrige felt går fortsatt via rediger-dialogen; avstemte rader varsles først
    - ✅ Bank-siden: hero-chips m/utløpsbadge + «Forny», stylet synk-resultatkort,
      frakoblings-modal, fjernet overflødig «ignorer»-sjekkboks; inline visningsnavn på
      bank (`bank_connections.name`) og bankkonto (`bank_accounts.name`, fall tilbake på
