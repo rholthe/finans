@@ -15,6 +15,7 @@ return new class extends Migration
             // (transaksjoner importeres ikke før den er koblet).
             $table->foreignId('account_id')->nullable()->constrained()->nullOnDelete();
             $table->string('external_id')->unique(); // GoCardless konto-id
+            $table->string('name')->nullable();      // brukervalgt visningsnavn (fall tilbake på iban/external_id)
             $table->string('iban')->nullable();
             $table->boolean('ignored')->default(false);
             $table->unsignedInteger('rate_limit')->nullable();

@@ -435,9 +435,14 @@ export async function renewBankConnection(id: number): Promise<string> {
 
 export async function linkBankAccount(
     id: number,
-    payload: { account_id?: number | null; ignored?: boolean },
+    payload: { account_id?: number | null; ignored?: boolean; name?: string | null },
 ): Promise<void> {
     await api.put(`/bank/accounts/${id}`, payload);
+}
+
+/** Setter visningsnavn på en banktilkobling (frontend + e-poster). */
+export async function renameBankConnection(id: number, name: string): Promise<void> {
+    await api.put(`/bank/connections/${id}`, { name });
 }
 
 export async function deleteBankConnection(id: number): Promise<void> {
@@ -468,7 +473,6 @@ export async function updateSettings(payload: Partial<AppSettings>): Promise<App
 // --- Regelmotor ---
 
 export interface RuleInput {
-    name?: string | null;
     match_contains: string;
     match_not_contains?: string | null;
     applies_to?: RuleApplies;
@@ -497,8 +501,4 @@ export async function updateRule(id: number, payload: Partial<RuleInput>): Promi
 
 export async function deleteRule(id: number): Promise<void> {
     await api.delete(`/rules/${id}`);
-}
-
-export async function reorderRules(rules: { id: number; priority: number }[]): Promise<void> {
-    await api.put('/rules/reorder', { rules });
 }

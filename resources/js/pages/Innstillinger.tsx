@@ -42,68 +42,95 @@ export default function Innstillinger() {
 
     return (
         <Layout>
-            <h1 className="text-2xl font-semibold">Innstillinger</h1>
+            <div>
+                <h1 className="text-2xl font-semibold">Innstillinger</h1>
+                <p className="mt-1 text-sm text-neutral-500">
+                    Banksynk og e-postvarsler for appen.
+                </p>
+            </div>
 
             {loading ? (
                 <p className="mt-8 text-neutral-400">Laster …</p>
             ) : (
-                <form
-                    onSubmit={save}
-                    className="mt-6 max-w-lg space-y-5 rounded-xl border border-neutral-200 bg-white p-6"
-                >
-                    <div>
-                        <h2 className="text-sm font-semibold text-neutral-800">Banksynk</h2>
-                        <p className="mt-1 text-xs text-neutral-500">
-                            Hvor mange dager bakover transaksjoner hentes. Hold tallene lave for å
-                            spare på bankenes rate-limit (4 spørringer per konto per døgn).
-                        </p>
-                    </div>
+                <form onSubmit={save} className="mt-6 max-w-2xl space-y-6">
+                    {/* Banksynk */}
+                    <section className="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">
+                        <header className="flex items-center gap-2.5 border-b border-neutral-100 px-5 py-3">
+                            <span
+                                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-100 text-lg text-sky-700"
+                                aria-hidden
+                            >
+                                🔄
+                            </span>
+                            <div>
+                                <h2 className="font-semibold text-neutral-900">Banksynk</h2>
+                                <p className="text-xs text-neutral-500">
+                                    Hvor mange dager bakover transaksjoner hentes. Hold tallene lave for å
+                                    spare på bankenes rate-limit (4 spørringer per konto per døgn).
+                                </p>
+                            </div>
+                        </header>
+                        <div className="grid gap-5 px-5 py-5 sm:grid-cols-2">
+                            <label className="block text-sm font-medium text-neutral-700">
+                                Dager ved manuell synk
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max="30"
+                                    value={manualDays}
+                                    onChange={(e) => setManualDays(e.target.value)}
+                                    className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 focus:border-neutral-900 focus:outline-none"
+                                />
+                                <span className="mt-1 block text-xs font-normal text-neutral-400">1–30 dager</span>
+                            </label>
 
-                    <label className="block text-sm font-medium text-neutral-700">
-                        Dager ved manuell synk
-                        <input
-                            type="number"
-                            min="1"
-                            max="30"
-                            value={manualDays}
-                            onChange={(e) => setManualDays(e.target.value)}
-                            className="mt-1 w-32 rounded-lg border border-neutral-300 px-3 py-2 focus:border-neutral-900 focus:outline-none"
-                        />
-                        <span className="ml-2 text-xs text-neutral-400">1–30</span>
-                    </label>
+                            <label className="block text-sm font-medium text-neutral-700">
+                                Dager ved automatisk (nattlig) synk
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max="10"
+                                    value={autoDays}
+                                    onChange={(e) => setAutoDays(e.target.value)}
+                                    className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 focus:border-neutral-900 focus:outline-none"
+                                />
+                                <span className="mt-1 block text-xs font-normal text-neutral-400">1–10 dager</span>
+                            </label>
+                        </div>
+                    </section>
 
-                    <label className="block text-sm font-medium text-neutral-700">
-                        Dager ved automatisk (nattlig) synk
-                        <input
-                            type="number"
-                            min="1"
-                            max="10"
-                            value={autoDays}
-                            onChange={(e) => setAutoDays(e.target.value)}
-                            className="mt-1 w-32 rounded-lg border border-neutral-300 px-3 py-2 focus:border-neutral-900 focus:outline-none"
-                        />
-                        <span className="ml-2 text-xs text-neutral-400">1–10</span>
-                    </label>
+                    {/* E-postvarsler */}
+                    <section className="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">
+                        <header className="flex items-center gap-2.5 border-b border-neutral-100 px-5 py-3">
+                            <span
+                                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-lg text-amber-700"
+                                aria-hidden
+                            >
+                                ✉️
+                            </span>
+                            <div>
+                                <h2 className="font-semibold text-neutral-900">E-postvarsler</h2>
+                                <p className="text-xs text-neutral-500">
+                                    Adressen som mottar rapport etter hver synk, og varsel når en
+                                    bankgodkjenning snart utløper. La stå tom for å skru av.
+                                </p>
+                            </div>
+                        </header>
+                        <div className="px-5 py-5">
+                            <label className="block text-sm font-medium text-neutral-700">
+                                Mottaker
+                                <input
+                                    type="email"
+                                    value={reportEmail}
+                                    onChange={(e) => setReportEmail(e.target.value)}
+                                    placeholder="din@epost.no"
+                                    className="mt-1 w-full max-w-sm rounded-lg border border-neutral-300 px-3 py-2 focus:border-neutral-900 focus:outline-none"
+                                />
+                            </label>
+                        </div>
+                    </section>
 
-                    <div className="border-t border-neutral-100 pt-5">
-                        <h2 className="text-sm font-semibold text-neutral-800">Synkrapport på e-post</h2>
-                        <p className="mt-1 text-xs text-neutral-500">
-                            Adressen som mottar rapport etter hver synk, og varsel når en
-                            bankgodkjenning snart utløper. La stå tom for å skru av.
-                        </p>
-                    </div>
-
-                    <label className="block text-sm font-medium text-neutral-700">
-                        Mottaker
-                        <input
-                            type="email"
-                            value={reportEmail}
-                            onChange={(e) => setReportEmail(e.target.value)}
-                            placeholder="din@epost.no"
-                            className="mt-1 w-full max-w-sm rounded-lg border border-neutral-300 px-3 py-2 focus:border-neutral-900 focus:outline-none"
-                        />
-                    </label>
-
+                    {/* Lagre */}
                     <div className="flex items-center gap-3">
                         <button
                             type="submit"
@@ -112,8 +139,16 @@ export default function Innstillinger() {
                         >
                             {busy ? 'Lagrer …' : 'Lagre'}
                         </button>
-                        {notice && <p className="text-sm text-green-700">{notice}</p>}
-                        {error && <p className="text-sm text-red-600">{error}</p>}
+                        {notice && (
+                            <span className="rounded-lg bg-green-50 px-3 py-1.5 text-sm text-green-800 ring-1 ring-green-100">
+                                ✓ {notice}
+                            </span>
+                        )}
+                        {error && (
+                            <span className="rounded-lg bg-red-50 px-3 py-1.5 text-sm text-red-700 ring-1 ring-red-100">
+                                {error}
+                            </span>
+                        )}
                     </div>
                 </form>
             )}

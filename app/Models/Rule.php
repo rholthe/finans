@@ -24,13 +24,10 @@ class Rule extends Model
     protected $attributes = [
         'applies_to' => 'both',
         'target_type' => 'category',
-        'priority' => 0,
         'active' => true,
     ];
 
     protected $fillable = [
-        'name',
-        'priority',
         'active',
         'match_contains',
         'match_not_contains',
@@ -98,6 +95,20 @@ class Rule extends Model
         // En regel uten match_contains-termer regnes ikke som en treff (unngå
         // at en tom regel fanger alt).
         return $this->terms($this->match_contains) !== [];
+    }
+
+    /**
+     * Spesifisitet for «mest spesifikk vinner»: flere/lengre inneholder-termer
+     * = mer spesifikk match. Returnerer [antall termer, samlet tegnlengde] som
+     * sorteres synkende av regelmotoren ved overlapp.
+     *
+     * @return array{int, int}
+     */
+    public function specificity(): array
+    {
+        $terms = $this->terms($this->match_contains);
+
+        return [count($terms), array_sum(array_map('mb_strlen', $terms))];
     }
 
     /**

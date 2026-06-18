@@ -18,8 +18,6 @@ class RuleResource extends JsonResource
     {
         return [
             'id' => $this->id,
-            'name' => $this->name,
-            'priority' => $this->priority,
             'active' => $this->active,
             'match_contains' => $this->match_contains,
             'match_not_contains' => $this->match_not_contains,

@@ -68,12 +68,22 @@ class RuleEngineTest extends TestCase
         $this->assertFalse($this->engine()->apply('LØNN TREKK', -500)->matched());
     }
 
-    public function test_forste_regel_etter_prioritet_vinner(): void
+    public function test_mest_spesifikk_regel_vinner_ved_overlapp(): void
     {
-        Rule::factory()->create(['priority' => 2, 'match_contains' => 'SHELL', 'set_payee' => 'Generell bensin']);
-        Rule::factory()->create(['priority' => 1, 'match_contains' => 'SHELL', 'set_payee' => 'Shell Spesifikk']);
+        // Begge matcher, men regelen med flest inneholder-termer er mest spesifikk.
+        Rule::factory()->create(['match_contains' => 'SHELL', 'set_payee' => 'Generell bensin']);
+        Rule::factory()->create(['match_contains' => 'SHELL, 7-ELEVEN', 'set_payee' => 'Shell 7-Eleven']);
 
-        $this->assertSame('Shell Spesifikk', $this->engine()->apply('SHELL 7-ELEVEN', -300)->payee);
+        $this->assertSame('Shell 7-Eleven', $this->engine()->apply('SHELL 7-ELEVEN OSLO', -300)->payee);
+    }
+
+    public function test_lengste_term_vinner_naar_antall_er_likt(): void
+    {
+        // Likt antall termer (1) → lengste samlede tekst er mest spesifikk.
+        Rule::factory()->create(['match_contains' => 'KIWI', 'set_payee' => 'Kiwi generell']);
+        Rule::factory()->create(['match_contains' => 'KIWI STORO', 'set_payee' => 'Kiwi Storo']);
+
+        $this->assertSame('Kiwi Storo', $this->engine()->apply('KIWI STORO 123', -100)->payee);
     }
 
     public function test_inaktiv_regel_ignoreres(): void

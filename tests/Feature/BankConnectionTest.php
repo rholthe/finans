@@ -88,6 +88,38 @@ class BankConnectionTest extends TestCase
         $this->assertDatabaseHas('bank_accounts', ['id' => $bankAccount->id, 'account_id' => $account->id]);
     }
 
+    public function test_setter_visningsnavn_pa_tilkobling(): void
+    {
+        $connection = BankConnection::create([
+            'institution_id' => 'SANDBOXFINANCE_SFIN0000', 'name' => 'Sandbox', 'consent_id' => 'r', 'status' => 'LN',
+        ]);
+
+        $this->putJson("/api/bank/connections/{$connection->id}", ['name' => '  DNB Privat  '])
+            ->assertOk()
+            ->assertJsonPath('data.name', 'DNB Privat');
+
+        $this->assertDatabaseHas('bank_connections', ['id' => $connection->id, 'name' => 'DNB Privat']);
+    }
+
+    public function test_setter_og_nullstiller_visningsnavn_pa_bankkonto(): void
+    {
+        $connection = BankConnection::create([
+            'institution_id' => 'SANDBOXFINANCE_SFIN0000', 'name' => 'Sandbox', 'consent_id' => 'r', 'status' => 'LN',
+        ]);
+        $bankAccount = $connection->bankAccounts()->create(['external_id' => 'acc-a', 'iban' => 'NO111']);
+
+        $this->putJson("/api/bank/accounts/{$bankAccount->id}", ['name' => '  Brukskonto  '])
+            ->assertOk()
+            ->assertJsonPath('data.name', 'Brukskonto');
+        $this->assertDatabaseHas('bank_accounts', ['id' => $bankAccount->id, 'name' => 'Brukskonto']);
+
+        // Tomt navn nullstiller (fall tilbake på iban/external_id).
+        $this->putJson("/api/bank/accounts/{$bankAccount->id}", ['name' => ''])
+            ->assertOk()
+            ->assertJsonPath('data.name', null);
+        $this->assertDatabaseHas('bank_accounts', ['id' => $bankAccount->id, 'name' => null]);
+    }
+
     public function test_sletter_tilkobling(): void
     {
         $connection = BankConnection::create([

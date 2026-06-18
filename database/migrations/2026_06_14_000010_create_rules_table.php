@@ -10,8 +10,6 @@ return new class extends Migration
     {
         Schema::create('rules', function (Blueprint $table) {
             $table->id();
-            $table->string('name')->nullable();
-            $table->unsignedInteger('priority')->default(0); // lavest sjekkes først
             $table->boolean('active')->default(true);
             $table->text('match_contains')->nullable();      // komma-/linjeseparerte termer (alle må finnes)
             $table->text('match_not_contains')->nullable();  // termer som ikke må finnes
@@ -19,6 +17,9 @@ return new class extends Migration
             $table->string('set_payee')->nullable();
             $table->text('set_memo')->nullable();
             $table->foreignId('category_id')->nullable()->constrained()->nullOnDelete();
+            $table->string('target_type')->default('category'); // App\Enums\RuleTarget: kategori/RTA/overføring
+            // Mottakerkonto når target_type = transfer (må være en ikke-synket konto).
+            $table->foreignId('transfer_account_id')->nullable()->constrained('accounts')->nullOnDelete();
             $table->timestamp('last_applied_at')->nullable();
             $table->timestamps();
         });

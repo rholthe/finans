@@ -52,6 +52,7 @@ class BankController extends Controller
                 'accounts' => $c->bankAccounts->map(fn (BankAccount $a): array => [
                     'id' => $a->id,
                     'external_id' => $a->external_id,
+                    'name' => $a->name,
                     'iban' => $a->iban,
                     'account_id' => $a->account_id,
                     'ignored' => $a->ignored,
@@ -234,18 +235,38 @@ class BankController extends Controller
     }
 
     /**
-     * Koble en bankkonto til en budsjettkonto (eller ignorer den).
+     * Koble en bankkonto til en budsjettkonto (eller ignorer den), og sett et
+     * valgfritt visningsnavn. Tomt navn nullstilles (fall tilbake på iban/id).
      */
     public function linkAccount(Request $request, BankAccount $bankAccount): JsonResponse
     {
         $validated = $request->validate([
             'account_id' => ['nullable', Rule::exists('accounts', 'id')],
             'ignored' => ['sometimes', 'boolean'],
+            'name' => ['sometimes', 'nullable', 'string', 'max:255'],
         ]);
+
+        if (array_key_exists('name', $validated)) {
+            $validated['name'] = filled($validated['name']) ? trim($validated['name']) : null;
+        }
 
         $bankAccount->update($validated);
 
-        return response()->json(['data' => $bankAccount->only(['id', 'account_id', 'ignored'])]);
+        return response()->json(['data' => $bankAccount->only(['id', 'account_id', 'ignored', 'name'])]);
+    }
+
+    /**
+     * Sett et visningsnavn på en banktilkobling (brukes i frontend og e-poster).
+     */
+    public function renameConnection(Request $request, BankConnection $bankConnection): JsonResponse
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+        ]);
+
+        $bankConnection->update(['name' => trim($validated['name'])]);
+
+        return response()->json(['data' => $bankConnection->only(['id', 'name'])]);
     }
 
     /**

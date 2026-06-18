@@ -10,10 +10,16 @@ return new class extends Migration
     {
         Schema::create('bank_connections', function (Blueprint $table) {
             $table->id();
-            $table->string('institution_id'); // GoCardless institusjons-id
+            $table->string('provider')->default('gocardless'); // hvilken aggregator (GoCardless, Enable Banking)
+            $table->string('institution_id');                  // leverandørens institusjons-id
             $table->string('name');
-            $table->string('requisition_id')->nullable();
-            $table->string('status')->default('CR'); // siste kjente requisition-status
+            // Nøytralt samtykke-id (GoCardless «requisition», Enable Banking «session»).
+            $table->string('consent_id')->nullable();
+            $table->string('status')->default('CR');           // siste kjente samtykke-status
+            // Når samtykket utløper (vanligvis 90 dager), og når vi sist varslet
+            // brukeren om forestående utløp (nullstilles ved fornying).
+            $table->timestamp('valid_until')->nullable();
+            $table->timestamp('expiry_notified_at')->nullable();
             $table->timestamps();
         });
     }

@@ -165,19 +165,19 @@ class BankSyncService
     private function syncAccount(BankDataProvider $provider, BankConnection $connection, BankAccount $bankAccount, string $dateFrom, array &$seen): void
     {
         if ($bankAccount->account_id === null) {
-            $this->line('info', __('Hopper over konto :iban: ikke koblet til en budsjettkonto.', ['iban' => $bankAccount->iban ?? $bankAccount->external_id]));
+            $this->line('info', __('Hopper over konto :iban: ikke koblet til en budsjettkonto.', ['iban' => $bankAccount->displayName()]));
 
             return;
         }
 
         if ($bankAccount->ignored) {
-            $this->line('info', __('Hopper over konto :iban: ignorert.', ['iban' => $bankAccount->iban ?? $bankAccount->external_id]));
+            $this->line('info', __('Hopper over konto :iban: ignorert.', ['iban' => $bankAccount->displayName()]));
 
             return;
         }
 
         if (! $bankAccount->isSyncable()) {
-            $this->line('warn', __('Hopper over konto :iban: rate-limit nådd, prøv igjen senere.', ['iban' => $bankAccount->iban ?? $bankAccount->external_id]));
+            $this->line('warn', __('Hopper over konto :iban: rate-limit nådd, prøv igjen senere.', ['iban' => $bankAccount->displayName()]));
             $this->hasErrors = true;
 
             return;
@@ -195,7 +195,7 @@ class BankSyncService
                 'rate_limit_reset_at' => $resetAt,
             ]);
             $this->line('warn', __('Rate-limit (429) for konto :iban – hopper over til :reset.', [
-                'iban' => $bankAccount->iban ?? $bankAccount->external_id,
+                'iban' => $bankAccount->displayName(),
                 'reset' => $resetAt->toDateTimeString(),
             ]));
             $this->hasErrors = true;
@@ -247,7 +247,7 @@ class BankSyncService
             __(':count nye transaksjon(er) for konto :iban (:pending reservert).', [
                 'count' => $newBooked,
                 'pending' => $pendingCount,
-                'iban' => $bankAccount->iban ?? $bankAccount->external_id,
+                'iban' => $bankAccount->displayName(),
             ])
         );
     }

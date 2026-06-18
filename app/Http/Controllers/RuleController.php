@@ -17,7 +17,7 @@ class RuleController extends Controller
 {
     public function index(): AnonymousResourceCollection
     {
-        $rules = Rule::query()->orderBy('priority')->orderBy('id')->get();
+        $rules = Rule::query()->orderBy('id')->get();
 
         return RuleResource::collection($rules);
     }
@@ -48,24 +48,6 @@ class RuleController extends Controller
     }
 
     /**
-     * Sett ny prioritetsrekkefølge: [{id, priority}, ...].
-     */
-    public function reorder(Request $request): JsonResponse
-    {
-        $validated = $request->validate([
-            'rules' => ['required', 'array'],
-            'rules.*.id' => ['required', ValidationRule::exists('rules', 'id')],
-            'rules.*.priority' => ['required', 'integer'],
-        ]);
-
-        foreach ($validated['rules'] as $row) {
-            Rule::whereKey($row['id'])->update(['priority' => $row['priority']]);
-        }
-
-        return response()->json(status: 204);
-    }
-
-    /**
      * @return array<string, mixed>
      */
     private function validatePayload(Request $request, bool $partial = false): array
@@ -73,8 +55,6 @@ class RuleController extends Controller
         $required = $partial ? 'sometimes' : 'required';
 
         $validated = $request->validate([
-            'name' => ['nullable', 'string', 'max:255'],
-            'priority' => ['sometimes', 'integer'],
             'active' => ['sometimes', 'boolean'],
             'match_contains' => [$required, 'string'],
             'match_not_contains' => ['nullable', 'string'],

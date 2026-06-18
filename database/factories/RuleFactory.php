@@ -17,8 +17,6 @@ class RuleFactory extends Factory
     public function definition(): array
     {
         return [
-            'name' => fake()->words(2, true),
-            'priority' => 0,
             'active' => true,
             'match_contains' => fake()->word(),
             'match_not_contains' => null,

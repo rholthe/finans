@@ -11,6 +11,7 @@ import {
     listAccounts,
     listBankConnections,
     listInstitutions,
+    renameBankConnection,
     renewBankConnection,
     syncBank,
 } from '@/lib/data';
@@ -157,6 +158,17 @@ export default function Bank() {
         reloadConnections();
     }
 
+    async function renameConnection(id: number, name: string) {
+        if (!name) return;
+        await renameBankConnection(id, name);
+        reloadConnections();
+    }
+
+    async function renameAccount(bankAccountId: number, name: string) {
+        await linkBankAccount(bankAccountId, { name: name || null });
+        reloadConnections();
+    }
+
     async function confirmDisconnect() {
         if (!disconnecting) return;
         await deleteBankConnection(disconnecting.id);
@@ -275,7 +287,13 @@ export default function Bank() {
                                     >
                                         🏦
                                     </span>
-                                    <span className="truncate font-semibold">{connection.name}</span>
+                                    <InlineNameEdit
+                                        display={connection.name}
+                                        initial={connection.name}
+                                        placeholder="Bankens navn"
+                                        onSave={(name) => renameConnection(connection.id, name)}
+                                        className="min-w-0 font-semibold"
+                                    />
                                     <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-500">
                                         {BANK_PROVIDER_LABELS[connection.provider] ?? connection.provider}
                                     </span>
@@ -337,7 +355,16 @@ export default function Bank() {
                                         className="flex flex-wrap items-center justify-between gap-3 px-5 py-3"
                                     >
                                         <span className="text-sm text-neutral-600">
-                                            {bankAccount.iban ?? bankAccount.external_id}
+                                            <InlineNameEdit
+                                                display={
+                                                    bankAccount.name ||
+                                                    bankAccount.iban ||
+                                                    bankAccount.external_id
+                                                }
+                                                initial={bankAccount.name ?? ''}
+                                                placeholder={bankAccount.iban ?? bankAccount.external_id}
+                                                onSave={(name) => renameAccount(bankAccount.id, name)}
+                                            />
                                             {rateLimitLabel(bankAccount) && (
                                                 <span className="ml-2 text-xs text-neutral-400">
                                                     ({rateLimitLabel(bankAccount)})
@@ -452,6 +479,90 @@ function SyncResultCard({ result, onClose }: { result: SyncResult; onClose: () =
                 </ul>
             )}
         </div>
+    );
+}
+
+/**
+ * Inline-redigerbart visningsnavn (bank eller bankkonto). Viser navnet med en
+ * diskret blyant ved hover; klikk bytter til et felt med lagre/avbryt.
+ */
+function InlineNameEdit({
+    display,
+    initial,
+    placeholder,
+    onSave,
+    className,
+}: {
+    display: string;
+    initial: string;
+    placeholder?: string;
+    onSave: (name: string) => Promise<void>;
+    className?: string;
+}) {
+    const [editing, setEditing] = useState(false);
+    const [value, setValue] = useState(initial);
+    const [busy, setBusy] = useState(false);
+
+    async function submit() {
+        setBusy(true);
+        try {
+            await onSave(value.trim());
+            setEditing(false);
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    if (!editing) {
+        return (
+            <span className={`group inline-flex items-center gap-1.5 ${className ?? ''}`}>
+                <span className="truncate">{display}</span>
+                <button
+                    type="button"
+                    onClick={() => {
+                        setValue(initial);
+                        setEditing(true);
+                    }}
+                    aria-label="Endre navn"
+                    className="shrink-0 text-neutral-300 opacity-0 transition group-hover:opacity-100 hover:text-neutral-700"
+                >
+                    ✏️
+                </button>
+            </span>
+        );
+    }
+
+    return (
+        <span className="inline-flex items-center gap-1.5">
+            <input
+                autoFocus
+                value={value}
+                placeholder={placeholder}
+                disabled={busy}
+                onChange={(e) => setValue(e.target.value)}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter') submit();
+                    if (e.key === 'Escape') setEditing(false);
+                }}
+                className="rounded-lg border border-neutral-300 px-2 py-1 text-sm focus:border-neutral-900 focus:outline-none"
+            />
+            <button
+                type="button"
+                onClick={submit}
+                disabled={busy}
+                className="text-xs font-medium text-sky-600 hover:text-sky-800 disabled:opacity-50"
+            >
+                Lagre
+            </button>
+            <button
+                type="button"
+                onClick={() => setEditing(false)}
+                disabled={busy}
+                className="text-xs text-neutral-400 hover:text-neutral-700"
+            >
+                Avbryt
+            </button>
+        </span>
     );
 }
 

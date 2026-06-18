@@ -41,13 +41,14 @@ class RuleTest extends TestCase
             ->assertStatus(422);
     }
 
-    public function test_lister_etter_prioritet(): void
+    public function test_lister_regler(): void
     {
-        Rule::factory()->create(['priority' => 5, 'set_payee' => 'B']);
-        Rule::factory()->create(['priority' => 1, 'set_payee' => 'A']);
+        Rule::factory()->create(['set_payee' => 'A']);
+        Rule::factory()->create(['set_payee' => 'B']);
 
         $this->getJson('/api/rules')
             ->assertOk()
+            ->assertJsonCount(2, 'data')
             ->assertJsonPath('data.0.set_payee', 'A')
             ->assertJsonPath('data.1.set_payee', 'B');
     }
@@ -62,22 +63,6 @@ class RuleTest extends TestCase
 
         $this->deleteJson("/api/rules/{$rule->id}")->assertNoContent();
         $this->assertDatabaseMissing('rules', ['id' => $rule->id]);
-    }
-
-    public function test_endrer_rekkefolge(): void
-    {
-        $a = Rule::factory()->create(['priority' => 1]);
-        $b = Rule::factory()->create(['priority' => 2]);
-
-        $this->putJson('/api/rules/reorder', [
-            'rules' => [
-                ['id' => $a->id, 'priority' => 10],
-                ['id' => $b->id, 'priority' => 5],
-            ],
-        ])->assertNoContent();
-
-        $this->assertDatabaseHas('rules', ['id' => $a->id, 'priority' => 10]);
-        $this->assertDatabaseHas('rules', ['id' => $b->id, 'priority' => 5]);
     }
 
     private function bankTransaction(array $attributes = []): Transaction

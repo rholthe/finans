@@ -11,7 +11,11 @@ return new class extends Migration
         Schema::create('scheduled_transactions', function (Blueprint $table) {
             $table->id();
             $table->foreignId('account_id')->constrained()->cascadeOnDelete();
+            // Satt = planlagt overføring til denne kontoen (account_id er «fra»).
+            $table->foreignId('transfer_account_id')->nullable()->constrained('accounts')->nullOnDelete();
             $table->foreignId('category_id')->nullable()->constrained()->nullOnDelete();
+            // Planlagt postering skal bevisst til RTA (typisk lønn) → rta=true.
+            $table->boolean('rta')->default(false);
             $table->decimal('amount', 15, 2); // signert: positiv = inntekt, negativ = utgift
             $table->string('payee')->nullable();
             $table->text('memo')->nullable();

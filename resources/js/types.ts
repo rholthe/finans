@@ -72,8 +72,6 @@ export const APPLIES_TO_LABELS: Record<RuleApplies, string> = {
 
 export interface Rule {
     id: number;
-    name: string | null;
-    priority: number;
     active: boolean;
     match_contains: string | null;
     match_not_contains: string | null;
@@ -271,6 +269,7 @@ export interface Institution {
 export interface BankAccountLink {
     id: number;
     external_id: string;
+    name: string | null; // brukervalgt visningsnavn; null = fall tilbake på iban/external_id
     iban: string | null;
     account_id: number | null;
     ignored: boolean;

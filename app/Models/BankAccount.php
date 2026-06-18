@@ -11,6 +11,7 @@ class BankAccount extends Model
         'bank_connection_id',
         'account_id',
         'external_id',
+        'name',
         'iban',
         'ignored',
         'rate_limit',
@@ -45,6 +46,14 @@ class BankAccount extends Model
     public function account(): BelongsTo
     {
         return $this->belongsTo(Account::class);
+    }
+
+    /**
+     * Visningsnavn: brukervalgt navn, ellers IBAN, ellers den eksterne konto-id-en.
+     */
+    public function displayName(): string
+    {
+        return $this->name ?: ($this->iban ?? $this->external_id);
     }
 
     /**

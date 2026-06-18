@@ -70,7 +70,6 @@ Route::prefix('api')->group(function () {
         // Regelmotor (payee/memo/kategori) – leverandøruavhengig.
         // Global re-kjøring finnes kun som CLI (rules:reapply); UI bruker den
         // avgrensede transactions/apply-rules på et filtrert/synlig sett.
-        Route::put('rules/reorder', [RuleController::class, 'reorder']);
         Route::apiResource('rules', RuleController::class)->only(['index', 'store', 'update', 'destroy']);
 
         // Bankintegrasjon (GoCardless bak BankDataProvider)
@@ -78,6 +77,7 @@ Route::prefix('api')->group(function () {
         Route::get('bank/connections', [BankController::class, 'connections']);
         Route::post('bank/connect', [BankController::class, 'connect']);
         Route::post('bank/connections/{bankConnection}/renew', [BankController::class, 'renew']);
+        Route::put('bank/connections/{bankConnection}', [BankController::class, 'renameConnection']);
         Route::get('bank/callback', [BankController::class, 'callback']);
         Route::put('bank/accounts/{bankAccount}', [BankController::class, 'linkAccount']);
         Route::delete('bank/connections/{bankConnection}', [BankController::class, 'deleteConnection']);

@@ -29,7 +29,6 @@ export default function RuleForm({
     onSaved: (rule: Rule) => void;
     onCancel: () => void;
 }) {
-    const [name, setName] = useState(existing?.name ?? '');
     const [matchContains, setMatchContains] = useState(existing?.match_contains ?? prefillMatch ?? '');
     const [matchNotContains, setMatchNotContains] = useState(existing?.match_not_contains ?? '');
     const [appliesTo, setAppliesTo] = useState<RuleApplies>(existing?.applies_to ?? 'both');
@@ -61,7 +60,6 @@ export default function RuleForm({
         setBusy(true);
         setError(null);
         const payload: RuleInput = {
-            name: name.trim() || null,
             match_contains: matchContains.trim(),
             match_not_contains: matchNotContains.trim() || null,
             applies_to: appliesTo,
@@ -84,10 +82,11 @@ export default function RuleForm({
     return (
         <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
             <label className="text-sm font-medium text-neutral-700">
-                Navn (valgfritt)
+                Inneholder (komma-separert, alle må finnes)
                 <input
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    value={matchContains}
+                    onChange={(e) => setMatchContains(e.target.value)}
+                    placeholder="f.eks. REMA, OSLO"
                     className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 focus:border-neutral-900 focus:outline-none"
                 />
             </label>
@@ -105,16 +104,6 @@ export default function RuleForm({
                         </option>
                     ))}
                 </select>
-            </label>
-
-            <label className="text-sm font-medium text-neutral-700">
-                Inneholder (komma-separert, alle må finnes)
-                <input
-                    value={matchContains}
-                    onChange={(e) => setMatchContains(e.target.value)}
-                    placeholder="f.eks. REMA, OSLO"
-                    className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 focus:border-neutral-900 focus:outline-none"
-                />
             </label>
 
             <label className="text-sm font-medium text-neutral-700">

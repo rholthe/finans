@@ -88,7 +88,9 @@ Banking for prod-app-godkjenning.
   importerer motparten sitt eget ben → dobbeltpostering) og oppretter motpart-benet ved import;
   `ReapplyRules` hopper over overføringsmål (konvertering skjer kun ved import). Anvendes ved import
   og på et avgrenset, brukervalgt sett på kontosiden — aldri globalt. Manuelt redigerte rader er
-  `locked` og overskrives aldri.
+  `locked` og overskrives aldri. **Ved overlapp vinner den mest spesifikke regelen** (flest, så
+  lengst, inneholder-termer via `Rule::specificity()`, lavest id som tie-break) — det finnes ingen
+  manuell prioritet eller navn på regler; Regler-siden er søk-/filtrerbar og sorteres på inneholder-teksten.
 - **«available» lagres aldri** — beregnes kumulativt (assigned + activity) i `BudgetService`,
   så redigering av historikk alltid gir korrekte tall. Samme for `needed` (mål) og kommende/
   projisert (planlagte poster).
@@ -107,9 +109,13 @@ Banking for prod-app-godkjenning.
   `transaction_splits` (`category_id` + signert `amount` + memo). **Pengeraden forblir én rad** i
   `transactions` (saldo/avstemming/RTA-identitet uberørt); splitt-forelderen får `category_id=null`
   og `is_split=true`. Σ splittbeløp må være lik transaksjonsbeløpet med samme fortegn (min. 2
-  linjer), valideres i `TransactionController::syncSplits`. Kun manuelt (etter postering) – regler,
-  planlagte og banksynk lager aldri splitter. Kategori-aktivitet (budsjett + rapporter) leses fra
-  `Transaction::categoryActivity()` (UNION av direkte kategoriserte rader + splittlinjer), så splitter
+  linjer), valideres i `TransactionController::syncSplits`. Invarianten forsvares også ved redigering:
+  `TransactionController::update` avviser (422) å endre `amount` på en splittet rad uten at nye
+  `splits` følger med (med mindre raden samtidig av-splittes via `category_id`/`rta`) – ellers ville
+  splittsummen desynke fra pengeraden og budsjettet komme i ubalanse. Kun manuelt (etter postering) –
+  regler, planlagte og banksynk lager aldri splitter. Kategori-aktivitet (budsjett + rapporter) leses fra
+  `Transaction::categoryActivity($from, $to)` (UNION av direkte kategoriserte rader + splittlinjer; et
+  valgfritt dato-intervall pushes inn i begge union-grenene så `transactions`-indeksene brukes), så splitter
   telles uten dobbelttelling; splitt-foreldre ekskluderes fra ukategorisert/RTA/inntekt (`is_split`).
   Overføringer kan splittes **kun** på det kategoriserte budsjett→overvåket-benet; øvrige ben røres ikke.
 - **Bokført vs reservert:** banksynk henter både bokførte og reserverte (`NormalizedTransaction.
@@ -184,11 +190,17 @@ Banking for prod-app-godkjenning.
    - ✅ Overføringer: budsjett↔overvåket-kategorisering via `TransferService`, egen
      «Overføring»-kolonne, alle overføringer låst, overvåkede kontoer uten kategori
    - ✅ Regel-mål: kategori / RTA / overføring (`RuleTarget`)
+   - ✅ Regler-siden: søk (inneholder/ikke/payee/memo) + samlet målfilter, sortert på inneholder-tekst,
+     komprimerte rader med mål-/gjelder-badges, stylet ny/rediger-modal og slett-bekreftelse (ingen
+     `confirm()`); fjernet manuell prioritet/reorder og regelnavn (mest spesifikk regel vinner)
    - ✅ Kontodetaljsiden: hero-kort (accent budsjett/overvåket), slett- og «endre
      avstemt»-bekreftelse som modaler (ingen `confirm()`)
    - ✅ Bank-siden: hero-chips m/utløpsbadge + «Forny», stylet synk-resultatkort,
-     frakoblings-modal, fjernet overflødig «ignorer»-sjekkboks
-   - ✅ Innstillinger: rapport-e-post-mottaker (flyttet fra env)
+     frakoblings-modal, fjernet overflødig «ignorer»-sjekkboks; inline visningsnavn på
+     bank (`bank_connections.name`) og bankkonto (`bank_accounts.name`, fall tilbake på
+     iban/external_id via `BankAccount::displayName()`) – brukt i frontend + synk-/utløps-e-poster
+   - ✅ Innstillinger: rapport-e-post-mottaker (flyttet fra env); stylet med seksjonskort
+     (ikon-headere for banksynk/e-post), undertittel og inline lagre-tilbakemelding
    - Konvensjon: bekreftelser bruker `Modal`-komponenten, ikke nettleserens `confirm()`
 
 ===
