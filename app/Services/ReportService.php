@@ -28,9 +28,8 @@ class ReportService
     {
         [$start, $end] = $this->range($from, $to);
 
-        $totals = Transaction::categoryActivity()
+        $totals = Transaction::categoryActivity($start->toDateString(), $end->toDateString())
             ->where('on_budget', true)
-            ->whereBetween('date', [$start->toDateString(), $end->toDateString()])
             ->where('amount', '<', 0)
             ->groupBy('category_id')
             ->selectRaw('category_id, SUM(amount) as total')
@@ -96,9 +95,8 @@ class ReportService
             ->groupBy('ym')
             ->pluck('total', 'ym');
 
-        $expense = Transaction::categoryActivity()
+        $expense = Transaction::categoryActivity($start->toDateString(), $end->toDateString())
             ->where('on_budget', true)
-            ->whereBetween('date', [$start->toDateString(), $end->toDateString()])
             ->where('amount', '<', 0)
             ->selectRaw($this->monthExpr().' as ym, SUM(amount) as total')
             ->groupBy('ym')
@@ -128,10 +126,9 @@ class ReportService
     {
         [$start, $end] = $this->range($from, $to);
 
-        $byMonth = Transaction::categoryActivity()
+        $byMonth = Transaction::categoryActivity($start->toDateString(), $end->toDateString())
             ->where('on_budget', true)
             ->where('category_id', $category->id)
-            ->whereBetween('date', [$start->toDateString(), $end->toDateString()])
             ->where('amount', '<', 0)
             ->selectRaw($this->monthExpr().' as ym, SUM(amount) as total')
             ->groupBy('ym')

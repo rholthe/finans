@@ -132,18 +132,27 @@ class Transaction extends Model
      * aggregeringer (budsjett-aktivitet, rapporter) splittene uten dobbelttelling –
      * splitt-forelderen har category_id null og faller ut av den direkte grenen.
      *
+     * Et valgfritt dato-intervall (`$from`/`$to`, YYYY-MM-DD) pushes inn i begge
+     * union-grenene før de slås sammen, slik at `transactions`-indeksene kan brukes
+     * og databasen slipper å materialisere hele historikken før den filtreres.
+     * Kall uten datoer beholder den fulle (kumulative) strømmen.
+     *
      * Kolonner: category_id, amount, date, account_id, on_budget.
      */
-    public static function categoryActivity(): QueryBuilder
+    public static function categoryActivity(?string $from = null, ?string $to = null): QueryBuilder
     {
         $direct = DB::table('transactions as t')
             ->join('accounts as a', 'a.id', '=', 't.account_id')
             ->whereNotNull('t.category_id')
+            ->when($from, fn (QueryBuilder $q) => $q->where('t.date', '>=', $from))
+            ->when($to, fn (QueryBuilder $q) => $q->where('t.date', '<=', $to))
             ->select('t.category_id', 't.amount', 't.date', 't.account_id', 'a.on_budget');
 
         $splits = DB::table('transaction_splits as s')
             ->join('transactions as t', 't.id', '=', 's.transaction_id')
             ->join('accounts as a', 'a.id', '=', 't.account_id')
+            ->when($from, fn (QueryBuilder $q) => $q->where('t.date', '>=', $from))
+            ->when($to, fn (QueryBuilder $q) => $q->where('t.date', '<=', $to))
             ->select('s.category_id', 's.amount', 't.date', 't.account_id', 'a.on_budget');
 
         return DB::query()->fromSub($direct->unionAll($splits), 'ca');

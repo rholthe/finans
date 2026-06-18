@@ -75,6 +75,22 @@ class TransactionController extends Controller
         $splits = $validated['splits'] ?? [];
         unset($validated['splits']);
 
+        // Splitt-invariant: en splittet rad har splittlinjer som må summere til
+        // pengeradens beløp. Endres beløpet uten at nye splittlinjer følger med –
+        // og uten at raden samtidig av-splittes via kategori/RTA – ville summen
+        // ikke lenger matche, og budsjettet kom i ubalanse (penger på konto endres
+        // mens kategori-aktiviteten leser de gamle splittbeløpene). Avvis i stedet
+        // for å skrive en inkonsistent rad.
+        $removesSplit = $request->has('category_id') || ($validated['rta'] ?? false) === true;
+        if ($transaction->is_split && ! $splitsProvided && ! $removesSplit
+            && array_key_exists('amount', $validated)
+            && round((float) $validated['amount'], 2) !== round((float) $transaction->amount, 2)) {
+            return response()->json(
+                ['message' => 'Beløpet på en splittet transaksjon kan ikke endres uten å oppdatere splittlinjene.'],
+                422,
+            );
+        }
+
         return DB::transaction(function () use ($request, $transaction, $validated, $splitsProvided, $splits) {
             // RTA og en konkret kategori utelukker hverandre: «Klar til å fordele»
             // betyr ukategorisert + rta=true; en konkret kategori nullstiller rta.

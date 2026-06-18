@@ -218,10 +218,9 @@ class BudgetService
             ->where('month', '<=', $start->toDateString())
             ->sum('assigned');
 
-        $activity = (float) Transaction::categoryActivity()
+        $activity = (float) Transaction::categoryActivity(to: $end->toDateString())
             ->where('on_budget', true)
             ->where('category_id', $category->id)
-            ->where('date', '<=', $end->toDateString())
             ->sum('amount');
 
         return round($assigned + $activity, 2);
@@ -368,10 +367,8 @@ class BudgetService
      */
     private function activityByCategory(?CarbonImmutable $from = null, ?CarbonImmutable $to = null): Collection
     {
-        return Transaction::categoryActivity()
+        return Transaction::categoryActivity($from?->toDateString(), $to?->toDateString())
             ->where('on_budget', true)
-            ->when($from, fn ($q) => $q->where('date', '>=', $from->toDateString()))
-            ->when($to, fn ($q) => $q->where('date', '<=', $to->toDateString()))
             ->groupBy('category_id')
             ->selectRaw('category_id, SUM(amount) as total')
             ->pluck('total', 'category_id')

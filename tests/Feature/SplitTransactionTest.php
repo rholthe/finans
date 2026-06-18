@@ -191,6 +191,67 @@ class SplitTransactionTest extends TestCase
         $this->assertDatabaseCount('transaction_splits', 0);
     }
 
+    public function test_beloep_kan_ikke_endres_paa_splittet_rad_uten_aa_oppdatere_splittene(): void
+    {
+        $account = Account::factory()->create(['on_budget' => true]);
+        $mat = Category::factory()->create();
+        $klaer = Category::factory()->create();
+
+        Transaction::factory()->for($account)->create(['date' => '2026-03-01', 'amount' => 2000, 'category_id' => null]);
+        $tx = Transaction::factory()->for($account)->create(['date' => '2026-03-10', 'amount' => -1000, 'category_id' => null]);
+
+        $this->putJson("/api/transactions/{$tx->id}", [
+            'splits' => [
+                ['category_id' => $mat->id, 'amount' => -600],
+                ['category_id' => $klaer->id, 'amount' => -400],
+            ],
+        ])->assertOk();
+
+        // Å endre beløpet uten å sende nye splittlinjer ville desynke splittsummen
+        // (−1000) fra pengeraden (−1500) og velte budsjettet → avvises.
+        $this->putJson("/api/transactions/{$tx->id}", ['amount' => -1500])
+            ->assertStatus(422);
+
+        // Raden og splittlinjene er uendret.
+        $this->assertDatabaseHas('transactions', ['id' => $tx->id, 'amount' => -1000, 'is_split' => true]);
+        $this->assertDatabaseHas('transaction_splits', [
+            'transaction_id' => $tx->id, 'category_id' => $mat->id, 'amount' => -600,
+        ]);
+
+        // Identiteten RTA + Σtilgjengelig = penger på konto (2000 − 1000 = 1000) holder.
+        $budget = $this->getJson('/api/budget?month=2026-03')->json();
+        $available = array_sum(array_column($budget['groups'], 'available'));
+        $this->assertEquals(1000, round($budget['ready_to_assign'] + $available, 2));
+        $this->getJson("/api/accounts/{$account->id}")->assertJsonPath('data.balance', 1000);
+    }
+
+    public function test_beloep_kan_endres_naar_nye_splittlinjer_foelger_med(): void
+    {
+        $account = Account::factory()->create(['on_budget' => true]);
+        $mat = Category::factory()->create();
+        $klaer = Category::factory()->create();
+        $tx = Transaction::factory()->for($account)->create(['date' => '2026-03-10', 'amount' => -1000, 'category_id' => null]);
+
+        $this->putJson("/api/transactions/{$tx->id}", [
+            'splits' => [
+                ['category_id' => $mat->id, 'amount' => -600],
+                ['category_id' => $klaer->id, 'amount' => -400],
+            ],
+        ])->assertOk();
+
+        // Beløp + nye splittlinjer sammen er konsistent og tillatt.
+        $this->putJson("/api/transactions/{$tx->id}", [
+            'amount' => -1500,
+            'splits' => [
+                ['category_id' => $mat->id, 'amount' => -900],
+                ['category_id' => $klaer->id, 'amount' => -600],
+            ],
+        ])->assertOk()->assertJsonPath('data.is_split', true);
+
+        $this->assertDatabaseHas('transactions', ['id' => $tx->id, 'amount' => -1500]);
+        $this->getJson("/api/accounts/{$account->id}")->assertJsonPath('data.balance', -1500);
+    }
+
     public function test_overforing_budsjett_til_overvaaket_kan_splittes(): void
     {
         $budget = Account::factory()->create(['on_budget' => true]);
