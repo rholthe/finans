@@ -7,6 +7,7 @@ use App\Models\Category;
 use App\Models\CategoryGroup;
 use App\Models\Transaction;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Rapportaggregeringer. Alt beregnes direkte fra `transactions` (ingen
@@ -202,11 +203,15 @@ class ReportService
     }
 
     /**
-     * SQLite-uttrykk som trekker ut «YYYY-MM» fra dato-kolonnen.
+     * DB-agnostisk uttrykk som trekker ut «YYYY-MM» fra dato-kolonnen.
+     * SQLite (lokalt) bruker strftime; MySQL/MariaDB (prod) bruker DATE_FORMAT.
      */
     private function monthExpr(): string
     {
-        return "strftime('%Y-%m', date)";
+        return match (DB::connection()->getDriverName()) {
+            'sqlite' => "strftime('%Y-%m', date)",
+            default => "DATE_FORMAT(date, '%Y-%m')",
+        };
     }
 
     /**
