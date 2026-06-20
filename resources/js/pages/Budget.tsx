@@ -54,6 +54,8 @@ export default function Budget() {
     const [autoBusy, setAutoBusy] = useState(false);
     const [selected, setSelected] = useState<Set<number>>(new Set());
     const [showBulkMove, setShowBulkMove] = useState(false);
+    const [showAddGroup, setShowAddGroup] = useState(false);
+    const [showReset, setShowReset] = useState(false);
 
     const reload = useCallback(() => {
         return getBudget(month).then(setBudget);
@@ -105,11 +107,8 @@ export default function Budget() {
         );
     }
 
-    async function addGroup() {
-        const name = prompt('Navn på kategorigruppe?')?.trim();
-        if (!name) return;
-        await createCategoryGroup(name);
-        reload();
+    function addGroup() {
+        setShowAddGroup(true);
     }
 
     async function runAutoAssign(strategy: AutoAssignStrategy) {
@@ -124,10 +123,10 @@ export default function Budget() {
     }
 
     async function runReset() {
-        if (!confirm(`Nullstille tildelingen for ${selected.size} kategori(er) denne måneden?`)) return;
         setAutoBusy(true);
         try {
             setBudget(await resetAssignments(month, Array.from(selected)));
+            setShowReset(false);
         } catch (e) {
             console.error(apiErrorMessage(e, 'Kunne ikke nullstille tildeling.'));
         } finally {
@@ -216,7 +215,7 @@ export default function Budget() {
                     <ActionButton onClick={() => setShowBulkMove(true)} disabled={autoBusy || noneSelected}>
                         Flytt valgte
                     </ActionButton>
-                    <ActionButton onClick={runReset} disabled={autoBusy || noneSelected}>
+                    <ActionButton onClick={() => setShowReset(true)} disabled={autoBusy || noneSelected}>
                         Nullstill tildeling
                     </ActionButton>
                 </div>
@@ -285,6 +284,47 @@ export default function Budget() {
                     }}
                     onClose={() => setShowBulkMove(false)}
                 />
+            )}
+
+            {showAddGroup && (
+                <NewGroupModal
+                    onCreated={() => {
+                        setShowAddGroup(false);
+                        reload();
+                    }}
+                    onClose={() => setShowAddGroup(false)}
+                />
+            )}
+
+            {showReset && (
+                <Modal
+                    title="Nullstill tildeling"
+                    size="sm"
+                    onClose={() => setShowReset(false)}
+                    footer={
+                        <>
+                            <button
+                                type="button"
+                                onClick={() => setShowReset(false)}
+                                className="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-500 hover:bg-neutral-100"
+                            >
+                                Avbryt
+                            </button>
+                            <button
+                                type="button"
+                                onClick={runReset}
+                                disabled={autoBusy}
+                                className="rounded-lg bg-red-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
+                            >
+                                Nullstill
+                            </button>
+                        </>
+                    }
+                >
+                    <p className="text-sm text-neutral-600">
+                        Nullstille tildelingen for {selected.size} kategori(er) i {monthLabel(month)}?
+                    </p>
+                </Modal>
             )}
         </Layout>
     );
@@ -820,6 +860,77 @@ function MoveFooterButtons({ busy, onClose }: { busy: boolean; onClose: () => vo
                 Flytt
             </button>
         </>
+    );
+}
+
+function NewGroupModal({
+    onCreated,
+    onClose,
+}: {
+    onCreated: () => void;
+    onClose: () => void;
+}) {
+    const [name, setName] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    async function submit(e: FormEvent) {
+        e.preventDefault();
+        const trimmed = name.trim();
+        if (!trimmed) {
+            setError('Skriv inn et navn.');
+            return;
+        }
+        setBusy(true);
+        setError(null);
+        try {
+            await createCategoryGroup(trimmed);
+            onCreated();
+        } catch (err) {
+            setError(apiErrorMessage(err, 'Kunne ikke opprette kategorigruppe.'));
+            setBusy(false);
+        }
+    }
+
+    return (
+        <Modal
+            title="Ny kategorigruppe"
+            size="sm"
+            onClose={onClose}
+            footer={
+                <>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-500 hover:bg-neutral-100"
+                    >
+                        Avbryt
+                    </button>
+                    <button
+                        type="submit"
+                        form="new-group-form"
+                        disabled={busy}
+                        className="rounded-lg bg-neutral-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+                    >
+                        Opprett
+                    </button>
+                </>
+            }
+        >
+            <form id="new-group-form" onSubmit={submit} className="space-y-4">
+                <label className="block text-xs font-medium text-neutral-600">
+                    Navn
+                    <input
+                        type="text"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        autoFocus
+                        className="mt-1 block w-full rounded-lg border border-neutral-300 px-3 py-1.5 text-sm focus:border-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-200"
+                    />
+                </label>
+                {error && <p className="text-sm text-red-600">{error}</p>}
+            </form>
+        </Modal>
     );
 }
 
