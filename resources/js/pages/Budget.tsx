@@ -137,6 +137,9 @@ export default function Budget() {
     const hasCategories = !!budget && budget.groups.some((g) => g.categories.length > 0);
     const noneSelected = selected.size === 0;
     const allSelected = allCategoryIds.length > 0 && selected.size === allCategoryIds.length;
+    // Mål og bulk-/auto-handlinger gjelder kun inneværende og fremtidige måneder.
+    // I fortiden viser vi bare tildelt/forbruk/tilgjengelig; endringer gjøres manuelt i listen.
+    const isPast = month < currentMonth();
 
     return (
         <Layout>
@@ -195,7 +198,7 @@ export default function Budget() {
                 </div>
             )}
 
-            {hasCategories && (
+            {hasCategories && !isPast && (
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                     <span className="text-xs font-medium text-neutral-400">
                         {noneSelected ? 'Velg kategorier' : `${selected.size} valgt`}
@@ -238,12 +241,16 @@ export default function Budget() {
                     <div
                         className={`${ROW_GRID} sticky top-0 z-10 mt-6 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-2 text-xs font-medium uppercase tracking-wide text-neutral-500`}
                     >
-                        <TriCheckbox
-                            checked={allSelected}
-                            indeterminate={selected.size > 0 && !allSelected}
-                            onChange={toggleAll}
-                            ariaLabel="Velg alle kategorier"
-                        />
+                        {isPast ? (
+                            <span />
+                        ) : (
+                            <TriCheckbox
+                                checked={allSelected}
+                                indeterminate={selected.size > 0 && !allSelected}
+                                onChange={toggleAll}
+                                ariaLabel="Velg alle kategorier"
+                            />
+                        )}
                         <span>Kategori</span>
                         <span className="text-right">Tildelt</span>
                         <span className="text-right">Aktivitet</span>
@@ -256,6 +263,7 @@ export default function Budget() {
                                 group={group}
                                 allGroups={budget.groups}
                                 month={month}
+                                isPast={isPast}
                                 selected={selected}
                                 onToggleCategory={toggleCategory}
                                 onToggleGroup={toggleGroup}
@@ -414,6 +422,7 @@ function Group({
     group,
     allGroups,
     month,
+    isPast,
     selected,
     onToggleCategory,
     onToggleGroup,
@@ -423,6 +432,7 @@ function Group({
     group: BudgetGroup;
     allGroups: BudgetGroup[];
     month: string;
+    isPast: boolean;
     selected: Set<number>;
     onToggleCategory: (id: number) => void;
     onToggleGroup: (group: BudgetGroup) => void;
@@ -449,12 +459,14 @@ function Group({
     return (
         <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
             <div className="flex items-center gap-2 border-b border-neutral-200 bg-neutral-100 px-4 py-2.5">
-                <TriCheckbox
-                    checked={allSel}
-                    indeterminate={selCount > 0 && !allSel}
-                    onChange={() => onToggleGroup(group)}
-                    ariaLabel={`Velg gruppen ${group.name}`}
-                />
+                {!isPast && (
+                    <TriCheckbox
+                        checked={allSel}
+                        indeterminate={selCount > 0 && !allSel}
+                        onChange={() => onToggleGroup(group)}
+                        ariaLabel={`Velg gruppen ${group.name}`}
+                    />
+                )}
                 <InlineNameEdit
                     display={group.name}
                     initial={group.name}
@@ -476,6 +488,7 @@ function Group({
                     category={category}
                     allGroups={allGroups}
                     month={month}
+                    isPast={isPast}
                     selected={selected.has(category.id)}
                     onToggle={() => onToggleCategory(category.id)}
                     onChange={onChange}
@@ -519,7 +532,11 @@ function goalSummary(goal: Goal): string {
     }
 }
 
-function availableBadge(category: BudgetCategory): string {
+function availableBadge(category: BudgetCategory, isPast: boolean): string {
+    // I fortiden farges kun faktisk overtrekk rødt; mål er ikke relevant der.
+    if (isPast) {
+        return category.available < 0 ? 'bg-red-50 text-red-700' : 'bg-neutral-100 text-neutral-600';
+    }
     // Rød ved faktisk overtrekk, eller når kommende regninger vil overtrekke.
     if (category.available < 0 || category.projected_available < 0) return 'bg-red-50 text-red-700';
     if (category.goal && category.needed > 0) return 'bg-amber-50 text-amber-700';
@@ -531,6 +548,7 @@ function CategoryRow({
     category,
     allGroups,
     month,
+    isPast,
     selected,
     onToggle,
     onChange,
@@ -539,6 +557,7 @@ function CategoryRow({
     category: BudgetCategory;
     allGroups: BudgetGroup[];
     month: string;
+    isPast: boolean;
     selected: boolean;
     onToggle: () => void;
     onChange: (budget: BudgetMonth) => void;
@@ -555,7 +574,11 @@ function CategoryRow({
     return (
         <div className="border-b border-neutral-100 last:border-0">
             <div className={`${ROW_GRID} px-4 py-1.5 ${selected ? 'bg-neutral-50' : 'hover:bg-neutral-50'}`}>
-                <TriCheckbox checked={selected} onChange={onToggle} ariaLabel={`Velg ${category.name}`} />
+                {isPast ? (
+                    <span />
+                ) : (
+                    <TriCheckbox checked={selected} onChange={onToggle} ariaLabel={`Velg ${category.name}`} />
+                )}
                 <div className="min-w-0">
                     <div className="flex items-center gap-2">
                         <InlineNameEdit
@@ -568,19 +591,21 @@ function CategoryRow({
                             }}
                             className="min-w-0 text-sm"
                         />
-                        <button
-                            onClick={() => setEditingGoal((v) => !v)}
-                            title={category.goal ? 'Rediger mål' : 'Sett mål'}
-                            className={`text-xs ${
-                                category.goal
-                                    ? 'text-neutral-500 hover:text-neutral-900'
-                                    : 'text-neutral-300 hover:text-neutral-600'
-                            }`}
-                        >
-                            ◎
-                        </button>
+                        {!isPast && (
+                            <button
+                                onClick={() => setEditingGoal((v) => !v)}
+                                title={category.goal ? 'Rediger mål' : 'Sett mål'}
+                                className={`text-xs ${
+                                    category.goal
+                                        ? 'text-neutral-500 hover:text-neutral-900'
+                                        : 'text-neutral-300 hover:text-neutral-600'
+                                }`}
+                            >
+                                ◎
+                            </button>
+                        )}
                     </div>
-                    {category.goal && (
+                    {!isPast && category.goal && (
                         <p className="text-xs text-neutral-400">
                             {goalSummary(category.goal)}
                             {category.needed > 0 && (
@@ -599,7 +624,7 @@ function CategoryRow({
                             )}
                         </p>
                     )}
-                    {category.upcoming !== 0 && (
+                    {!isPast && category.upcoming !== 0 && (
                         <p className="text-xs text-neutral-400">
                             <Link
                                 to={`/planlagte?category=${category.id}`}
@@ -635,7 +660,7 @@ function CategoryRow({
                         type="button"
                         onClick={() => setShowMove(true)}
                         title="Flytt penger til en annen kategori"
-                        className={`rounded-full px-2.5 py-0.5 text-sm font-medium tabular-nums hover:ring-2 hover:ring-neutral-200 ${availableBadge(category)}`}
+                        className={`rounded-full px-2.5 py-0.5 text-sm font-medium tabular-nums hover:ring-2 hover:ring-neutral-200 ${availableBadge(category, isPast)}`}
                     >
                         {formatNok(category.available)}
                     </button>
