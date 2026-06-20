@@ -36,6 +36,25 @@ class RuleEngineTest extends TestCase
         $this->assertTrue($result->matched());
     }
 
+    public function test_matchende_regel_stempler_last_applied_at(): void
+    {
+        $rule = Rule::factory()->create(['match_contains' => 'REMA', 'set_payee' => 'Rema 1000']);
+        $this->assertNull($rule->last_applied_at);
+
+        $this->engine()->apply('KORTKJØP REMA 1000 OSLO', -250);
+
+        $this->assertNotNull($rule->fresh()->last_applied_at);
+    }
+
+    public function test_ikke_matchende_regel_rorer_ikke_last_applied_at(): void
+    {
+        $rule = Rule::factory()->create(['match_contains' => 'REMA', 'set_payee' => 'Rema 1000']);
+
+        $this->engine()->apply('KIWI STORO', -100);
+
+        $this->assertNull($rule->fresh()->last_applied_at);
+    }
+
     public function test_alle_termer_maa_finnes(): void
     {
         Rule::factory()->create(['match_contains' => 'REMA, OSLO', 'set_payee' => 'Rema Oslo']);

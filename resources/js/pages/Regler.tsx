@@ -3,6 +3,7 @@ import Layout from '@/components/Layout';
 import Modal from '@/components/Modal';
 import RuleForm from '@/components/RuleForm';
 import { deleteRule, listAccounts, listCategoryGroups, listRules, updateRule } from '@/lib/data';
+import { formatDate } from '@/lib/format';
 import {
     APPLIES_TO_LABELS,
     RULE_TARGET_LABELS,
@@ -18,6 +19,14 @@ type TargetFilter = 'all' | RuleTarget;
 const TARGET_FILTER_LABELS: Record<TargetFilter, string> = {
     all: 'Alle mål',
     ...RULE_TARGET_LABELS,
+};
+
+/** Sorteringsvalg for regellisten. */
+type SortKey = 'contains' | 'last_applied';
+
+const SORT_LABELS: Record<SortKey, string> = {
+    contains: 'Inneholder-tekst',
+    last_applied: 'Sist brukt',
 };
 
 /** Fargetoner per regelmål for badge. */
@@ -36,6 +45,7 @@ export default function Regler() {
     const [deleting, setDeleting] = useState<Rule | null>(null);
     const [search, setSearch] = useState('');
     const [targetFilter, setTargetFilter] = useState<TargetFilter>('all');
+    const [sort, setSort] = useState<SortKey>('contains');
 
     function reload() {
         return listRules().then(setRules);
@@ -59,7 +69,7 @@ export default function Regler() {
     );
 
     // Søk på all tekst (inneholder, inneholder ikke, payee, memo), filtrer på mål,
-    // og sorter på inneholder-teksten.
+    // og sorter på inneholder-teksten eller sist brukt (nyeste først, aldri brukt sist).
     const visibleRules = useMemo(() => {
         const q = search.trim().toLowerCase();
         return rules
@@ -69,8 +79,15 @@ export default function Regler() {
                 return [rule.match_contains, rule.match_not_contains, rule.set_payee, rule.set_memo]
                     .some((field) => field?.toLowerCase().includes(q));
             })
-            .sort((a, b) => (a.match_contains ?? '').localeCompare(b.match_contains ?? '', 'nb'));
-    }, [rules, search, targetFilter]);
+            .sort((a, b) => {
+                if (sort === 'last_applied') {
+                    const ta = a.last_applied_at ? Date.parse(a.last_applied_at) : -Infinity;
+                    const tb = b.last_applied_at ? Date.parse(b.last_applied_at) : -Infinity;
+                    if (ta !== tb) return tb - ta;
+                }
+                return (a.match_contains ?? '').localeCompare(b.match_contains ?? '', 'nb');
+            });
+    }, [rules, search, targetFilter, sort]);
 
     async function confirmDelete() {
         if (!deleting) return;
@@ -144,6 +161,18 @@ export default function Regler() {
                         </option>
                     ))}
                 </select>
+                <select
+                    value={sort}
+                    onChange={(e) => setSort(e.target.value as SortKey)}
+                    className="rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-neutral-900 focus:outline-none"
+                    aria-label="Sortering"
+                >
+                    {(Object.keys(SORT_LABELS) as SortKey[]).map((value) => (
+                        <option key={value} value={value}>
+                            Sorter: {SORT_LABELS[value]}
+                        </option>
+                    ))}
+                </select>
             </div>
 
             {editing !== null && (
@@ -200,6 +229,13 @@ export default function Regler() {
                                     {actionSummary(rule)}
                                 </p>
                             </div>
+
+                            <span
+                                className="hidden shrink-0 text-right text-xs text-neutral-400 sm:block sm:w-28"
+                                title={rule.last_applied_at ? `Sist brukt ${formatDate(rule.last_applied_at)}` : 'Aldri brukt'}
+                            >
+                                {rule.last_applied_at ? formatDate(rule.last_applied_at) : 'Aldri brukt'}
+                            </span>
 
                             <label className="flex shrink-0 items-center gap-1.5 text-xs text-neutral-500">
                                 <input
