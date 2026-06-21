@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Deploy-script for Finans (prod: finans.example.com, /var/www/finans).
+# Deploy-script for Finans (prod, f.eks. /var/www/finans).
 #
-# Kjøres som brukeren som eier koden (ragnar) – ingen sudo nødvendig:
+# Kjøres som brukeren som eier koden – ingen sudo nødvendig:
 #   ./deploy.sh
 #
 # Kø-arbeideren resirkuleres med `queue:restart` (grasiøs: arbeideren
