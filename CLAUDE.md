@@ -62,7 +62,9 @@ Banking for prod-app-godkjenning.
 - `app/Services/` — `BudgetService` (beregner available/RTA), `GoalService`, `ScheduledTransactionService`,
   `TransferService` (oppretter overføringsben m/budsjett↔overvåket-regler – delt av manuell
   overføring, planlagt overføring og overføringsregel), `ReconciliationService` (avstemming:
-  klarert saldo → justering), `ReportService` (rapportaggregeringer fra transactions)
+  klarert saldo → justering), `ReportService` (rapportaggregeringer fra transactions;
+  måneds-gruppering er DB-agnostisk via `monthExpr()` – `strftime` på SQLite, `DATE_FORMAT` på
+  MySQL/MariaDB. Rå dato-SQL må alltid forgrenes på driver, ellers feiler det i prod men ikke lokalt)
 - `app/Jobs/SyncBankTransactionsJob.php` — køet banksynk (WithoutOverlapping)
 - `app/Support/AppSettings.php` — brukerstyrte innstillinger (nøkkel/verdi)
 - `app/Enums/` — `AccountType`, `GoalType`, `ScheduleFrequency`, `RuleApplies`, `RuleTarget`
@@ -204,15 +206,21 @@ Banking for prod-app-godkjenning.
      grasiøs degradering, bulk-handlinger deaktiveres når ingenting er valgt
    - ✅ Budsjettsiden: seleksjon (avkrysning per kategori/gruppe/alle), avgrenset
      auto-allokering + bulk-flytt/nullstill, sticky header, badges, tydeligere
-     skille mellom kategorigrupper/kategorier, advarsel om ukategoriserte fra tidligere måneder
+     skille mellom kategorigrupper/kategorier, advarsel om ukategoriserte fra tidligere måneder;
+     ny kategorigruppe + nullstill-bekreftelse som `Modal` (ingen `prompt()`/`confirm()`).
+     **Fortid er lesemodus:** mål gjelder kun inneværende/fremtidige måneder, så for `month <
+     currentMonth()` skjules mål-UI, bulk-/auto-knapper og seleksjon – kun tildelt/forbruk/
+     tilgjengelig vises, og endringer gjøres manuelt i radene (tildelt-input, flytt, navn).
    - ✅ Ukategorisert-håndhevelse: `rta`-kolonne, badge per konto + filter, «Klar til å
      fordele»-valg, varsel i avstemmingsmodal
    - ✅ Overføringer: budsjett↔overvåket-kategorisering via `TransferService`, egen
      «Overføring»-kolonne, alle overføringer låst, overvåkede kontoer uten kategori
    - ✅ Regel-mål: kategori / RTA / overføring (`RuleTarget`)
-   - ✅ Regler-siden: søk (inneholder/ikke/payee/memo) + samlet målfilter, sortert på inneholder-tekst,
-     komprimerte rader med mål-/gjelder-badges, stylet ny/rediger-modal og slett-bekreftelse (ingen
-     `confirm()`); fjernet manuell prioritet/reorder og regelnavn (mest spesifikk regel vinner)
+   - ✅ Regler-siden: søk (inneholder/ikke/payee/memo) + samlet målfilter, sorterbar på inneholder-tekst
+     eller sist brukt, komprimerte rader med mål-/gjelder-badges + «sist brukt»-dato, stylet ny/rediger-
+     modal og slett-bekreftelse (ingen `confirm()`); fjernet manuell prioritet/reorder og regelnavn (mest
+     spesifikk regel vinner). `rules.last_applied_at` stemples av `RuleEngine` når en regel vinner
+     (`saveQuietly`), eksponeres i `RuleResource`.
    - ✅ Kontodetaljsiden: hero-kort (accent budsjett/overvåket), slett- og «endre
      avstemt»-bekreftelse som modaler (ingen `confirm()`); inline kategori-nedtrekk
      (ukategorisert/RTA/kategori) direkte i raden for vanlige transaksjoner – splitt,
