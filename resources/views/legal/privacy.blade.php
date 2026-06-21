@@ -12,11 +12,13 @@
         Behandlingsansvarlig for opplysningene i applikasjonen er:
     </p>
     <ul>
-        <li>Ragnar Holthe</li>
-        <li>E-post: <a href="mailto:76702553+rholthe@users.noreply.github.com">76702553+rholthe@users.noreply.github.com</a></li>
+        <li>{{ config('legal.operator_name') }}</li>
+        @if (config('legal.operator_email'))
+            <li>E-post: <a href="mailto:{{ config('legal.operator_email') }}">{{ config('legal.operator_email') }}</a></li>
+        @endif
     </ul>
     <p>
-        Applikasjonen driftes på domenet <strong>finans.example.com</strong> og brukes av én
+        Applikasjonen driftes på domenet <strong>{{ config('legal.domain') }}</strong> og brukes av én
         enkelt person (eieren). Det finnes ingen registrering, ingen flere brukere og ingen
         offentlig tilgang utover de offentlige sidene for personvern og vilkår.
     </p>
@@ -112,6 +114,10 @@
     <h2>11. Kontakt</h2>
     <p>
         Spørsmål om personvern rettes til
-        <a href="mailto:76702553+rholthe@users.noreply.github.com">76702553+rholthe@users.noreply.github.com</a>.
+        @if (config('legal.operator_email'))
+            <a href="mailto:{{ config('legal.operator_email') }}">{{ config('legal.operator_email') }}</a>.
+        @else
+            behandlingsansvarlig.
+        @endif
     </p>
 @endsection

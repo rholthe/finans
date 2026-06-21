@@ -83,7 +83,9 @@
         <footer class="page">
             <a href="/privacy">Personvern</a>
             <a href="/terms">Vilkår</a>
-            <span>Kontakt: <a href="mailto:76702553+rholthe@users.noreply.github.com">76702553+rholthe@users.noreply.github.com</a></span>
+            @if (config('legal.operator_email'))
+                <span>Kontakt: <a href="mailto:{{ config('legal.operator_email') }}">{{ config('legal.operator_email') }}</a></span>
+            @endif
         </footer>
     </div>
 </body>

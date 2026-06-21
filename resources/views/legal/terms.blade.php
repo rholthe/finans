@@ -3,7 +3,7 @@
 @section('content')
     <p class="lead">
         Finans er en privat, selvhostet budsjett- og økonomiapplikasjon for personlig bruk,
-        tilgjengelig på finans.example.com. Disse vilkårene gjelder bruken av applikasjonen.
+        tilgjengelig på {{ config('legal.domain') }}. Disse vilkårene gjelder bruken av applikasjonen.
     </p>
 
     <h2>1. Om tjenesten</h2>
@@ -64,6 +64,10 @@
     <h2>9. Kontakt</h2>
     <p>
         Spørsmål om vilkårene rettes til
-        <a href="mailto:76702553+rholthe@users.noreply.github.com">76702553+rholthe@users.noreply.github.com</a>.
+        @if (config('legal.operator_email'))
+            <a href="mailto:{{ config('legal.operator_email') }}">{{ config('legal.operator_email') }}</a>.
+        @else
+            applikasjonens eier.
+        @endif
     </p>
 @endsection
