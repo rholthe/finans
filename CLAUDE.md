@@ -69,10 +69,14 @@ Banking for prod-app-godkjenning.
 - `app/Support/AppSettings.php` — brukerstyrte innstillinger (nøkkel/verdi)
 - `app/Enums/` — `AccountType`, `GoalType`, `ScheduleFrequency`, `RuleApplies`, `RuleTarget`
 - `app/Console/Commands/` — `SetPassword`, `SyncBankTransactions` (`bank:sync`),
-  `PostDueScheduledTransactions`, `ReapplyRules` (`rules:reapply`)
+  `PostDueScheduledTransactions`, `ReapplyRules` (`rules:reapply`), `CheckBankConsentExpiry`
+  (`bank:check-expiry`), `DumpAspspMetadata` (`bank:aspsp-metadata` – dumper rå Enable Banking-
+  ASPSP-metadata for feilsøking av `required_psu_headers` m.m.)
 - `resources/js/` — React-SPA (`app.tsx` entry, `Root.tsx` ruter, `pages/`, `components/`,
   `lib/api.ts`, `lib/data.ts`, `auth.tsx`)
 - `resources/views/app.blade.php` — SPA-skall; `resources/views/legal/` — offentlige personvern/vilkår
+  (operatørinfo – navn/e-post/domene – hentes fra `config/legal.php`: `LEGAL_OPERATOR_NAME`/
+  `LEGAL_OPERATOR_EMAIL`/`LEGAL_DOMAIN`, så repoet ikke hardkoder personlige opplysninger)
 
 ## Arkitektur-prinsipper
 
@@ -160,7 +164,17 @@ Banking for prod-app-godkjenning.
   config som legacy-fallback. GoCardless
   oppgir rate-limit i headere (`X-RateLimit-Account-Success-*`); Enable Banking gjør **ikke** det –
   kun `429` signaliserer grensen, som fanges (`BankRateLimitException`) og markerer kontoen ikke-
-  synkbar til neste runde.
+  synkbar til neste runde. Siden EB ikke sender tall, ville en 429-markering (`rate_limit_remaining=0`)
+  henge igjen for alltid – derfor **nullstiller en vellykket henting markeringen** (`storeRateLimit`
+  setter feltene til null når leverandøren ikke oppgir rate-limit-info); frontend skjuler dessuten
+  «synk igjen»-etiketten når `rate_limit_reset_at` er passert.
+- **PSU-kontekst (Enable Banking):** flere ASPSP-er oppgir `psu-ip-address` i `required_psu_headers`
+  og avviser kall uten den (Bulder → `ASPSP_ERROR`/`422 PSU_HEADER_NOT_PROVIDED` ved uovervåket synk;
+  DNB er lempelig). `EnableBankingProvider` sender derfor `psu-ip-address` + `psu-user-agent` på alle
+  kall: sluttbrukerens reelle IP i attended-flyter (`setPsuContext` fra connect/renew/callback) og en
+  konfigurert fallback (`ENABLEBANKING_PSU_IP`, typisk serverens utgående IP) ved uovervåket synk;
+  tom config = ingen header (uendret oppførsel). `setPsuContext` ligger på `BankDataProvider`
+  (no-op for GoCardless). Feilsøk en banks krav med `bank:aspsp-metadata --filter=<navn>`.
 - **Samtykkeutløp + fornying:** et bank-samtykke varer typisk 90 dager. `BankConsent` bærer en
   normalisert `expiresAt` (GoCardless: end-user-agreement `accepted` + `access_valid_for_days`;
   Enable Banking: session-ens `access.valid_until`), som lagres som `bank_connections.valid_until`
