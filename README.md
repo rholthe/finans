@@ -1,59 +1,230 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Finans — a self-hosted YNAB alternative
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Finans is a self-hosted, single-user budgeting app with European bank
+integration, built as a replacement for YNAB. Money that comes in lands in
+**Ready to Assign**, and you give every krone a job by assigning it to
+categories. Transactions are pulled automatically from your bank, categorized by
+rules, and reconciled against your real balances.
 
-## About Laravel
+> **Heads up — read before you self-host**
+> - **The UI is in Norwegian** and the app currently supports **NOK only**.
+>   Bank connectivity works across Europe (the aggregators below cover most of
+>   the EEA), but the interface and currency are not localized yet.
+> - It's a **single-user** app secured by **one shared password** — there is no
+>   multi-user account system. Run it for yourself (or a household), behind
+>   HTTPS.
+> - This is a personal project shared in the hope it's useful. It comes with **no
+>   warranty** (see [LICENSE](LICENSE)). You are responsible for your own
+>   deployment, backups, and the bank credentials you configure.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Features
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+- **Manual + automatic accounting** — cash, bank, savings, credit card and loan
+  accounts; on-budget vs. tracking accounts.
+- **Envelope budgeting engine** — category groups & categories, monthly
+  assignment, activity/available, and a leak-free *Ready to Assign*.
+- **Goals & auto-assign** — monthly funding, "have X available each month", and
+  save-up-to-an-amount-by-a-date targets.
+- **Bank integration** behind a provider-agnostic abstraction:
+  **GoCardless Bank Account Data** and **Enable Banking** (use either or both).
+- **Auto-categorization rules** — derive payee/memo and a target (a category,
+  *Ready to Assign*, or a transfer) from the bank's description; most specific
+  rule wins.
+- **Scheduled / recurring transactions** (bills), including scheduled transfers.
+- **Credit cards** as ordinary accounts that can go negative; pay them down with
+  a transfer.
+- **Reconciliation** against your real bank balance.
+- **Split transactions** across multiple categories.
+- **Reports** — spending by category, income vs. spending, category trends, net
+  worth (Recharts).
+- **Nightly sync** (queued job + scheduler) with an email report, plus
+  consent-expiry warnings and one-click renewal.
+- **Mobile quick-entry** screen for jotting down cash transactions on the go.
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+## Tech stack
 
-## Learning Laravel
+| Layer | Technology |
+|---|---|
+| Backend | Laravel 12 (PHP 8.2+) as a JSON API |
+| Frontend | React 19 + TypeScript + React Router 7, built with Vite; Tailwind 4; Recharts |
+| Database | SQLite locally, MySQL/MariaDB in production (migrations are DB-agnostic) |
+| Auth | Single app-wide password; 1-year session cookie |
+| Queue / cache | `database` driver — **no Redis required** |
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+Frontend and backend are the **same Laravel app on the same origin**: the React
+SPA is served by a catch-all Blade route, and the API lives under `/api/*` with
+session + CSRF protection.
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+## Requirements
 
-## Laravel Sponsors
+- **PHP 8.2+** (developed and tested on 8.4) with the usual Laravel extensions
+  (`mbstring`, `openssl`, `pdo`, `tokenizer`, `xml`, `ctype`, `json`, `bcmath`,
+  `fileinfo`). `openssl` is required for Enable Banking's JWT signing.
+- **Composer 2**
+- **Node.js 20+** and npm (for building the frontend with Vite 7)
+- A database: **SQLite** is enough locally; **MySQL/MariaDB** recommended for
+  production.
+- For automatic bank sync in production: a **cron** entry and a **persistent
+  queue worker** (e.g. Supervisor). See [Production deployment](#production-deployment).
+- A free account with at least one bank aggregator —
+  **[GoCardless Bank Account Data](https://gocardless.com/bank-account-data/)**
+  or **[Enable Banking](https://enablebanking.com/)**. See
+  [docs/bank-setup.md](docs/bank-setup.md).
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+## Quick start (local)
 
-### Premium Partners
+```bash
+git clone https://github.com/rholthe/finans.git
+cd finans
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+composer install
+npm install
+
+cp .env.example .env
+php artisan key:generate
+```
+
+For the simplest local setup, use SQLite. Edit `.env`:
+
+```dotenv
+DB_CONNECTION=sqlite
+# remove or comment out DB_HOST / DB_PORT / DB_DATABASE / DB_USERNAME / DB_PASSWORD
+```
+
+```bash
+touch database/database.sqlite
+php artisan migrate
+
+# Set the single app password (you'll log in with this)
+php artisan app:set-password "choose-a-strong-password"
+
+# Run server + Vite + queue worker + log tailer together
+composer dev
+```
+
+Open the URL printed by `php artisan serve` (default `http://localhost:8000`)
+and log in with the password you set.
+
+> **Why `composer dev` and not just `php artisan serve`?** Bank sync runs as a
+> **queued job**. `composer dev` starts a queue worker alongside the server, so
+> sync jobs actually run. With a bare `serve` they would sit in the queue.
+
+Run the test suite with:
+
+```bash
+php artisan test
+```
+
+## Configuration
+
+Everything is `.env`-driven; see `.env.example` for the full list. The
+essentials:
+
+| Variable | Purpose |
+|---|---|
+| `APP_PASSWORD_HASH` | Set via `php artisan app:set-password "…"` — the single login password |
+| `APP_DISPLAY_TIMEZONE` | Timezone for *display* only (e.g. emails). Data is stored in UTC. Default `Europe/Oslo` |
+| `DB_*` | SQLite locally, MySQL/MariaDB in production |
+| `MAIL_*` | SMTP for sync reports & expiry warnings. `MAIL_MAILER=log` writes mail to the log instead of sending |
+| `BANK_SYNC_REPORT_EMAIL` | Fallback recipient for sync/expiry emails (the in-app *Settings* value wins) |
+| `GOCARDLESS_*` / `ENABLEBANKING_*` | Bank aggregator credentials — see [docs/bank-setup.md](docs/bank-setup.md) |
+
+You can run the app with **no bank provider configured** and enter everything
+manually; the bank integration is optional.
+
+## Bank integration
+
+Finans talks to banks through a provider-agnostic interface, so you can use
+either or both of:
+
+- **GoCardless Bank Account Data** (formerly Nordigen) — free tier, broad EEA
+  coverage. Good if you already have an account.
+- **Enable Banking** — free tier for personal, non-commercial use. Uses a
+  self-signed RSA JWT per request.
+
+Each connection records its own provider, so multiple providers can be active at
+once. **Full step-by-step setup for both is in
+[docs/bank-setup.md](docs/bank-setup.md).**
+
+Once a provider is configured, go to the **Bank** page in the app, connect a
+bank, complete the consent flow, and link each bank account to a budget account.
+
+## Production deployment
+
+Production runs as the code-owner user (no sudo needed) on a typical
+LAMP-style host: **Apache (mod_php) or nginx + PHP-FPM**, **MariaDB/MySQL**, with
+the app at e.g. `/var/www/finans`.
+
+Two background pieces are required for automatic sync and scheduled postings —
+**no Redis needed** (the `database` queue driver is used):
+
+1. **Cron** — runs Laravel's scheduler every minute:
+   ```cron
+   * * * * * cd /path/to/finans && php artisan schedule:run >> /dev/null 2>&1
+   ```
+2. **A persistent queue worker** under a process manager such as Supervisor:
+   ```ini
+   [program:finans-worker]
+   command=php /path/to/finans/artisan queue:work --tries=3 --max-time=3600
+   autostart=true
+   autorestart=true
+   user=your-code-user
+   ```
+
+The scheduler runs the nightly bank sync (05:00), posts due scheduled
+transactions (00:05), and checks for expiring bank consents (06:00) — see
+`routes/console.php`.
+
+The repo includes a [`deploy.sh`](deploy.sh) that you can adapt: it enables
+maintenance mode, pulls, runs `composer install --no-dev`, `npm ci && npm run
+build`, `migrate --force`, caches config/routes/views, and restarts the queue
+worker.
+
+> **Important production gotcha:** config is cached in production. Whenever you
+> change a value in `.env`, you must rebuild the cache **and recycle the queue
+> worker**, or the running app (and the long-lived worker) keep serving the old
+> values:
+> ```bash
+> php artisan config:cache && php artisan queue:restart
+> ```
+
+**Enable Banking requires public `/privacy` and `/terms` pages** for app
+approval. These are served as standalone Blade pages (outside the login/SPA) at
+`/privacy` and `/terms` — make sure they're reachable on your domain.
+
+## Security notes
+
+- **Serve over HTTPS only.** The whole app is protected by one password and a
+  long-lived session cookie.
+- **Never commit secrets.** `.env` is git-ignored; keep your bank credentials,
+  `APP_KEY`, and Enable Banking private key out of version control.
+- The Enable Banking private key can be provided as PEM content in `.env` or as a
+  file path — a file path outside the web root is preferable in production.
+- Keep your host, PHP, and dependencies patched. You are handling read-only
+  access to your own bank data; treat the server accordingly.
+
+## Troubleshooting
+
+- **A frontend change isn't showing up** — run `npm run build` (prod) or
+  `npm run dev` / `composer dev` (local). Vite assets must be rebuilt.
+- **`Unable to locate file in Vite manifest`** — same fix: build the frontend.
+- **Bank sync jobs never run** — you don't have a queue worker running. Use
+  `composer dev` locally or a Supervisor worker in production.
+- **`PSU_HEADER_NOT_PROVIDED` / `ASPSP_ERROR` from Enable Banking** — some banks
+  require the `psu-ip-address` header for unattended sync. Set
+  `ENABLEBANKING_PSU_IP` to your server's outbound public IP, then
+  `config:cache && queue:restart`. See [docs/bank-setup.md](docs/bank-setup.md).
+- **Changed `.env` in production but nothing happened** — rebuild the config
+  cache and restart the worker (see the gotcha above).
 
 ## Contributing
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
-
-## Code of Conduct
-
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
-
-## Security Vulnerabilities
-
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+This is primarily a personal project, but issues and pull requests are welcome.
+If you send a PR, please run `php artisan test` and `vendor/bin/pint` first.
 
 ## License
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+[MIT](LICENSE) © 2026 Ragnar Holthe.
+
+Built on [Laravel](https://laravel.com) (MIT). Not affiliated with YNAB,
+GoCardless, or Enable Banking.
