@@ -45,6 +45,39 @@ class EnableBankingProviderTest extends TestCase
         $this->assertSame('DNB', $result[0]['name']);
     }
 
+    public function test_raw_institusjoner_beholder_full_metadata(): void
+    {
+        Http::fake([
+            'eb.test/aspsps*' => Http::response(['aspsps' => [
+                ['name' => 'Bulder', 'country' => 'NO', 'required_psu_headers' => ['psu-ip-address'], 'maximum_consent_validity' => 7776000],
+            ]]),
+        ]);
+
+        $result = (new EnableBankingProvider)->getInstitutionsRaw('NO');
+
+        $this->assertCount(1, $result);
+        $this->assertSame(['psu-ip-address'], $result[0]['required_psu_headers']);
+        $this->assertSame(7776000, $result[0]['maximum_consent_validity']);
+    }
+
+    public function test_aspsp_metadata_kommando_dumper_full_metadata(): void
+    {
+        Http::fake([
+            'eb.test/aspsps*' => Http::response(['aspsps' => [
+                ['name' => 'Bulder', 'country' => 'NO', 'required_psu_headers' => ['psu-ip-address']],
+                ['name' => 'DNB', 'country' => 'NO'],
+            ]]),
+        ]);
+
+        $exit = \Illuminate\Support\Facades\Artisan::call('bank:aspsp-metadata', ['--filter' => 'bulder']);
+        $output = \Illuminate\Support\Facades\Artisan::output();
+
+        $this->assertSame(0, $exit);
+        $this->assertStringContainsString('Bulder', $output);
+        $this->assertStringContainsString('required_psu_headers', $output);
+        $this->assertStringNotContainsString('DNB', $output);
+    }
+
     public function test_create_consent_returnerer_lenke(): void
     {
         Http::fake([

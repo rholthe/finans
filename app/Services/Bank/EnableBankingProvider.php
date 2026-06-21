@@ -47,6 +47,19 @@ class EnableBankingProvider implements BankDataProvider
         $this->country = (string) config('enablebanking.country', 'NO');
     }
 
+    /**
+     * Rå ASPSP-metadata fra Enable Banking (uavkortet), til feilsøking av
+     * leverandørspesifikke samtykke-/tilgangskrav (f.eks. `required_psu_headers`,
+     * `maximum_consent_validity`, `psu_types`). Returnerer hele bankobjektet slik
+     * EB oppgir det, i motsetning til den normaliserte `getInstitutions()`.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function getInstitutionsRaw(string $country = 'NO'): array
+    {
+        return array_values($this->request('GET', '/aspsps', ['country' => strtoupper($country)])->json('aspsps') ?? []);
+    }
+
     public function getInstitutions(string $country = 'NO'): array
     {
         $aspsps = $this->request('GET', '/aspsps', ['country' => strtoupper($country)])->json('aspsps') ?? [];
