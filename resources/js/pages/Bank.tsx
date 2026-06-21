@@ -30,6 +30,10 @@ import {
 /** «3 av 4 igjen» + når kvoten nullstilles, fra sist kjente rate-limit. */
 function rateLimitLabel(a: BankAccountLink): string | null {
     if (a.rate_limit_remaining === null) return null;
+    // Utløpt rate-limit-vindu: tallene er utdaterte (kvoten er nullstilt), så
+    // ikke vis dem. Enable Banking sender ingen nye tall ved vellykket synk, så
+    // uten denne sjekken ville «0 synk igjen i dag» henge igjen til neste synk.
+    if (a.rate_limit_reset_at && new Date(a.rate_limit_reset_at).getTime() <= Date.now()) return null;
     const total = a.rate_limit ? ` av ${a.rate_limit}` : '';
     let reset = '';
     if (a.rate_limit_reset_at) {

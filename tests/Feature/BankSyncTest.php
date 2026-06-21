@@ -302,6 +302,26 @@ class BankSyncTest extends TestCase
         $this->assertDatabaseCount('transactions', 0);
     }
 
+    public function test_vellykket_synk_nullstiller_utdatert_429_markering(): void
+    {
+        $bankAccount = $this->linkedAccount();
+        // Utdatert 429-markering: kvoten er for lengst nullstilt (reset i fortid),
+        // men remaining=0 henger igjen siden leverandøren (EB) ikke sender tall.
+        $bankAccount->update([
+            'rate_limit_remaining' => 0,
+            'rate_limit_reset_at' => now()->subDay(),
+        ]);
+        $this->provider->transactions['acc1'] = [$this->tx('tx-1', -300)];
+
+        $event = $this->sync();
+
+        $this->assertSame(SyncEvent::STATUS_NEW, $event->status);
+        $bankAccount->refresh();
+        $this->assertNull($bankAccount->rate_limit_remaining);
+        $this->assertNull($bankAccount->rate_limit_reset_at);
+        $this->assertTrue($bankAccount->isSyncable());
+    }
+
     public function test_hopper_over_konto_uten_kobling(): void
     {
         $connection = BankConnection::create([

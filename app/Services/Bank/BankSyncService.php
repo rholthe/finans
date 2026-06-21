@@ -337,15 +337,28 @@ class BankSyncService
     {
         $rateLimit = $provider->lastRateLimit();
 
-        if ($rateLimit === null) {
+        // Leverandøren oppgir rate-limit-tall (GoCardless): lagre dem.
+        if ($rateLimit !== null) {
+            $bankAccount->update([
+                'rate_limit' => $rateLimit['limit'],
+                'rate_limit_remaining' => $rateLimit['remaining'],
+                'rate_limit_reset_at' => $rateLimit['reset_at'],
+            ]);
+
             return;
         }
 
-        $bankAccount->update([
-            'rate_limit' => $rateLimit['limit'],
-            'rate_limit_remaining' => $rateLimit['remaining'],
-            'rate_limit_reset_at' => $rateLimit['reset_at'],
-        ]);
+        // Leverandøren oppgir ingen tall (Enable Banking): en vellykket henting
+        // beviser at kvoten ikke er oppbrukt, så nullstill en eventuell utdatert
+        // 429-markering. Uten dette ville «0 synk igjen i dag» henge igjen for
+        // alltid, siden EB aldri sender tall som overskriver remaining=0.
+        if ($bankAccount->rate_limit_remaining !== null) {
+            $bankAccount->update([
+                'rate_limit' => null,
+                'rate_limit_remaining' => null,
+                'rate_limit_reset_at' => null,
+            ]);
+        }
     }
 
     private function sendReport(SyncEvent $event): void
