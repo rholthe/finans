@@ -31,6 +31,15 @@ interface BankDataProvider
     public function createConsent(string $institutionId, string $reference): BankConsent;
 
     /**
+     * Sett PSU-konteksten (sluttbrukerens IP/User-Agent) for påfølgende kall.
+     * Berlin Group/PSD2 krever `psu-ip-address` for flere ASPSP-er; ved
+     * tilstedeværende bruker (attended) er dette sluttbrukerens reelle IP, ved
+     * uovervåket synk en konfigurert fallback. Leverandører som ikke trenger
+     * det, implementerer en no-op.
+     */
+    public function setPsuContext(?string $ipAddress, ?string $userAgent = null): void;
+
+    /**
      * Fullfør samtykket etter at brukeren er sendt tilbake (callback). Mottar
      * rå spørringsparametere fra callback-URL-en og den eventuelle consent-id-en
      * fra opprettelsen. Returnerer det koblede samtykket med konto-id-er.

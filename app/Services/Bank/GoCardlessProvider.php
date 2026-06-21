@@ -66,6 +66,11 @@ class GoCardlessProvider implements BankDataProvider
         );
     }
 
+    public function setPsuContext(?string $ipAddress, ?string $userAgent = null): void
+    {
+        // GoCardless håndterer PSU-konteksten internt; ingen headere trengs her.
+    }
+
     public function completeConsent(array $callback, ?string $consentId): BankConsent
     {
         // GoCardless tildeler requisition-id-en ved opprettelse, så vi henter

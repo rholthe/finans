@@ -52,6 +52,11 @@ class FakeBankProvider implements BankDataProvider
         );
     }
 
+    public function setPsuContext(?string $ipAddress, ?string $userAgent = null): void
+    {
+        // No-op i testene.
+    }
+
     public function completeConsent(array $callback, ?string $consentId): BankConsent
     {
         return $this->getConsent((string) $consentId);

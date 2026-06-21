@@ -79,7 +79,9 @@ class BankController extends Controller
 
         $providerKey = $validated['provider'] ?? BankProviderRegistry::DEFAULT;
         $reference = (string) Str::uuid();
-        $consent = $this->providers->get($providerKey)->createConsent($validated['institution_id'], $reference);
+        $provider = $this->providers->get($providerKey);
+        $provider->setPsuContext($request->ip(), $request->userAgent());
+        $consent = $provider->createConsent($validated['institution_id'], $reference);
 
         $request->session()->put('bank_ref', $reference);
         $request->session()->put('bank_provider', $providerKey);
@@ -97,6 +99,7 @@ class BankController extends Controller
     public function renew(Request $request, BankConnection $bankConnection): JsonResponse
     {
         $provider = $this->providers->get($bankConnection->provider);
+        $provider->setPsuContext($request->ip(), $request->userAgent());
         $reference = (string) Str::uuid();
         $consent = $provider->createConsent($bankConnection->institution_id, $reference);
 
@@ -126,6 +129,7 @@ class BankController extends Controller
         }
 
         $provider = $this->providers->get($providerKey);
+        $provider->setPsuContext($request->ip(), $request->userAgent());
         $reference = $provider->callbackReference($request->query());
 
         if (! $reference || ! $expected || ! hash_equals($expected, $reference)) {

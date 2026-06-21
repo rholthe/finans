@@ -35,6 +35,10 @@ class EnableBankingProvider implements BankDataProvider
 
     private string $country;
 
+    private ?string $psuIpAddress;
+
+    private ?string $psuUserAgent;
+
     /** @var array{limit: ?int, remaining: ?int, reset_at: ?CarbonImmutable}|null */
     private ?array $lastRateLimit = null;
 
@@ -45,6 +49,22 @@ class EnableBankingProvider implements BankDataProvider
         $this->privateKey = $this->resolvePrivateKey();
         $this->redirectUri = (string) config('enablebanking.redirect_uri');
         $this->country = (string) config('enablebanking.country', 'NO');
+
+        // Fallback-PSU-kontekst for uovervåket synk (cron), der ingen sluttbruker
+        // er til stede; attended-flyter overstyrer via setPsuContext().
+        $this->psuIpAddress = ((string) config('enablebanking.psu_ip')) ?: null;
+        $this->psuUserAgent = ((string) config('enablebanking.psu_user_agent')) ?: null;
+    }
+
+    public function setPsuContext(?string $ipAddress, ?string $userAgent = null): void
+    {
+        if ($ipAddress !== null && $ipAddress !== '') {
+            $this->psuIpAddress = $ipAddress;
+        }
+
+        if ($userAgent !== null && $userAgent !== '') {
+            $this->psuUserAgent = $userAgent;
+        }
     }
 
     /**
@@ -317,7 +337,11 @@ class EnableBankingProvider implements BankDataProvider
      */
     private function request(string $method, string $endpoint, array $data = []): Response
     {
-        $request = Http::withToken($this->jwt())->baseUrl($this->baseUri)->acceptJson()->timeout(60);
+        $request = Http::withToken($this->jwt())
+            ->withHeaders($this->psuHeaders())
+            ->baseUrl($this->baseUri)
+            ->acceptJson()
+            ->timeout(60);
 
         $response = match (strtoupper($method)) {
             'POST' => $request->post($endpoint, $data),
@@ -354,6 +378,21 @@ class EnableBankingProvider implements BankDataProvider
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    /**
+     * PSU-headere (Berlin Group/PSD2) som sendes med hver request når de er
+     * tilgjengelige. `psu-ip-address` kreves av flere ASPSP-er (jf. ASPSP-enes
+     * `required_psu_headers`); tomme verdier utelates.
+     *
+     * @return array<string, string>
+     */
+    private function psuHeaders(): array
+    {
+        return array_filter([
+            'psu-ip-address' => $this->psuIpAddress,
+            'psu-user-agent' => $this->psuUserAgent,
+        ], fn (?string $value): bool => $value !== null && $value !== '');
     }
 
     /**

@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Services\Bank\BankRateLimitException;
 use App\Services\Bank\EnableBankingProvider;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -69,13 +70,50 @@ class EnableBankingProviderTest extends TestCase
             ]]),
         ]);
 
-        $exit = \Illuminate\Support\Facades\Artisan::call('bank:aspsp-metadata', ['--filter' => 'bulder']);
-        $output = \Illuminate\Support\Facades\Artisan::output();
+        $exit = Artisan::call('bank:aspsp-metadata', ['--filter' => 'bulder']);
+        $output = Artisan::output();
 
         $this->assertSame(0, $exit);
         $this->assertStringContainsString('Bulder', $output);
         $this->assertStringContainsString('required_psu_headers', $output);
         $this->assertStringNotContainsString('DNB', $output);
+    }
+
+    public function test_psu_ip_fra_config_sendes_som_header_ved_uovervaaket_synk(): void
+    {
+        config(['enablebanking.psu_ip' => '203.0.113.7', 'enablebanking.psu_user_agent' => 'Finans/1.0']);
+
+        Http::fake(['eb.test/accounts/*/transactions*' => Http::response(['transactions' => []])]);
+
+        (new EnableBankingProvider)->getTransactions('acc-1', 'Bulder', '2026-01-01');
+
+        Http::assertSent(fn ($request): bool => $request->hasHeader('psu-ip-address', '203.0.113.7')
+            && $request->hasHeader('psu-user-agent', 'Finans/1.0'));
+    }
+
+    public function test_set_psu_context_overstyrer_config_fallback(): void
+    {
+        config(['enablebanking.psu_ip' => '203.0.113.7']);
+
+        Http::fake(['eb.test/accounts/*/transactions*' => Http::response(['transactions' => []])]);
+
+        $provider = new EnableBankingProvider;
+        $provider->setPsuContext('198.51.100.42', 'Mozilla/5.0');
+        $provider->getTransactions('acc-1', 'Bulder', '2026-01-01');
+
+        Http::assertSent(fn ($request): bool => $request->hasHeader('psu-ip-address', '198.51.100.42')
+            && $request->hasHeader('psu-user-agent', 'Mozilla/5.0'));
+    }
+
+    public function test_ingen_psu_ip_header_naar_ikke_konfigurert(): void
+    {
+        config(['enablebanking.psu_ip' => null]);
+
+        Http::fake(['eb.test/accounts/*/transactions*' => Http::response(['transactions' => []])]);
+
+        (new EnableBankingProvider)->getTransactions('acc-1', 'Bulder', '2026-01-01');
+
+        Http::assertSent(fn ($request): bool => ! $request->hasHeader('psu-ip-address'));
     }
 
     public function test_create_consent_returnerer_lenke(): void
