@@ -13,6 +13,14 @@ export interface Account {
     last_reconciled_at: string | null;
     uncategorized_count: number; // transaksjoner som mangler aktiv kategorisering
     bank_synced: boolean; // koblet til banksynk (overføringsregler kan ikke peke hit)
+    bank_balance?: BankBalance | null; // bankens egen saldo fra siste synk (kun på kontodetalj)
+}
+
+/** Bankens egen saldo fra siste synk – mot appens klarerte/totale beløp. */
+export interface BankBalance {
+    booked: number | null; // kun bokførte poster
+    available: number | null; // inkl. reserverte
+    synced_at: string | null; // tidspunkt for siste saldosynk (ISO)
 }
 
 export interface ReconcileResult {

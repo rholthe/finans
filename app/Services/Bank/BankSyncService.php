@@ -209,17 +209,25 @@ class BankSyncService
         }
 
         $this->storeRateLimit($provider, $bankAccount);
+        $this->storeBalance($provider, $bankAccount);
 
         // Reserverte (PEND) poster mangler stabil external_id og endrer seg
         // mellom synk-er, så de dedup'es ikke på id. I stedet erstattes kontoens
-        // ulåste reserverte rader med dagens reserverte sett ved hver synk: en
-        // reservert post som er bokført siden sist forsvinner her og kommer inn
-        // igjen som booket nedenfor – altså «oppdatert ved bokføring». Låste
-        // (manuelt redigerte) reserverte rader bevares urørt.
+        // reserverte rader med dagens reserverte sett ved hver synk: en reservert
+        // post som er bokført siden sist forsvinner her og kommer inn igjen som
+        // booket nedenfor – altså «oppdatert ved bokføring».
+        //
+        // Også *låste* reserverte rader fjernes: en reservert rad blir låst hvis
+        // brukeren kategoriserer den manuelt før den bokføres, men Enable Banking
+        // gir bokført-versjonen en ny external_id (transaction_id vs entry_reference),
+        // så dedupen kjenner den ikke igjen og importerer den på nytt. Beholdt vi den
+        // låste reserverte raden, ville den bli foreldreløs som duplikat. Reserverte
+        // rader er kortlevde og erstattes uansett av bokføringen, så vi prioriterer
+        // å unngå duplikater framfor å bevare en manuell kategorisering på en rad som
+        // straks forsvinner (bokført-raden re-kategoriseres av reglene).
         Transaction::query()
             ->where('account_id', $bankAccount->account_id)
             ->where('pending', true)
-            ->where('locked', false)
             ->delete();
 
         $newBooked = 0;
@@ -331,6 +339,31 @@ class BankSyncService
         ]);
 
         $bankLeg->update(['transfer_id' => $oppositeLeg->id]);
+    }
+
+    /**
+     * Hent og lagre bankens egen saldo (bokført + inkl. reservert). Saldo er
+     * sekundært til transaksjonene, så en feil her logges som advarsel uten å
+     * markere hele synken som feilet.
+     */
+    private function storeBalance(BankDataProvider $provider, BankAccount $bankAccount): void
+    {
+        try {
+            $balance = $provider->getBalances($bankAccount->external_id);
+        } catch (Throwable $e) {
+            $this->line('warn', __('Kunne ikke hente saldo for konto :iban: :error', [
+                'iban' => $bankAccount->displayName(),
+                'error' => $e->getMessage(),
+            ]));
+
+            return;
+        }
+
+        $bankAccount->update([
+            'balance_booked' => $balance->booked,
+            'balance_available' => $balance->available,
+            'balance_synced_at' => now(),
+        ]);
     }
 
     private function storeRateLimit(BankDataProvider $provider, BankAccount $bankAccount): void

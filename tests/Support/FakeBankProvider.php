@@ -2,6 +2,7 @@
 
 namespace Tests\Support;
 
+use App\Services\Bank\BankBalance;
 use App\Services\Bank\BankConsent;
 use App\Services\Bank\BankDataProvider;
 use App\Services\Bank\BankRateLimitException;
@@ -26,6 +27,9 @@ class FakeBankProvider implements BankDataProvider
 
     /** @var array<string, list<NormalizedTransaction>> */
     public array $transactions = [];
+
+    /** @var array<string, BankBalance> */
+    public array $balances = [];
 
     /**
      * Konto-id-er som skal svare 429. Verdien er valgfritt Retry-After-tidspunkt.
@@ -97,6 +101,11 @@ class FakeBankProvider implements BankDataProvider
         }
 
         return $this->transactions[$accountId] ?? [];
+    }
+
+    public function getBalances(string $accountId): BankBalance
+    {
+        return $this->balances[$accountId] ?? new BankBalance(booked: null, available: null);
     }
 
     public function lastRateLimit(): ?array

@@ -81,6 +81,30 @@ class GoCardlessProviderTest extends TestCase
         $this->assertNotNull($rateLimit['reset_at']);
     }
 
+    public function test_henter_normalisert_banksaldo(): void
+    {
+        Http::fake(function ($request) {
+            if (str_contains($request->url(), '/token/new/')) {
+                return Http::response(['access' => 'tok', 'access_expires' => 3600, 'refresh' => 'ref', 'refresh_expires' => 7200]);
+            }
+            if (str_contains($request->url(), '/balances/')) {
+                return Http::response(['balances' => [
+                    ['balanceAmount' => ['amount' => '1000.00', 'currency' => 'NOK'], 'balanceType' => 'closingBooked'],
+                    ['balanceAmount' => ['amount' => '950.00', 'currency' => 'NOK'], 'balanceType' => 'interimAvailable'],
+                ]]);
+            }
+
+            return Http::response([], 200);
+        });
+
+        $provider = new GoCardlessProvider;
+        $balance = $provider->getBalances('acc-1');
+
+        $this->assertSame(1000.0, $balance->booked);
+        $this->assertSame(950.0, $balance->available);
+        $this->assertSame('NOK', $balance->currency);
+    }
+
     public function test_henter_token_kun_en_gang_for_flere_kall(): void
     {
         $this->fakeBooked([]);

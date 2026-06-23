@@ -25,7 +25,7 @@ import {
     updateTransaction,
     type NewTransaction,
 } from '@/lib/data';
-import { formatDate, formatNok, todayIso } from '@/lib/format';
+import { formatDate, formatDateTime, formatNok, todayIso } from '@/lib/format';
 import {
     ACCOUNT_TYPE_LABELS,
     type Account,
@@ -241,13 +241,20 @@ export default function AccountDetail() {
                                 </div>
                             </div>
                             <div className="flex flex-col items-end gap-2">
-                                <span
-                                    className={`text-3xl font-semibold tabular-nums ${
-                                        account.balance < 0 ? 'text-red-600' : 'text-neutral-900'
-                                    }`}
-                                >
-                                    {formatNok(account.balance)}
-                                </span>
+                                <div className="flex flex-col items-end">
+                                    {account.bank_balance && (
+                                        <span className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">
+                                            App – totalt
+                                        </span>
+                                    )}
+                                    <span
+                                        className={`text-3xl font-semibold tabular-nums ${
+                                            account.balance < 0 ? 'text-red-600' : 'text-neutral-900'
+                                        }`}
+                                    >
+                                        {formatNok(account.balance)}
+                                    </span>
+                                </div>
                                 <button
                                     onClick={() => setShowReconcile(true)}
                                     className="rounded-lg border border-neutral-300 bg-white/70 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-white"
@@ -256,12 +263,39 @@ export default function AccountDetail() {
                                 </button>
                             </div>
                         </div>
-                        <p className="mt-3 text-xs text-neutral-500">
-                            Klarert:{' '}
-                            <span className="font-medium tabular-nums">{formatNok(account.cleared_balance)}</span>
-                            {account.last_reconciled_at &&
-                                ` · sist avstemt ${formatDate(account.last_reconciled_at)}`}
-                        </p>
+                        <div className="mt-3 space-y-1 text-xs text-neutral-500">
+                            <p>
+                                App – klarert:{' '}
+                                <span className="font-medium tabular-nums">{formatNok(account.cleared_balance)}</span>
+                                {account.last_reconciled_at &&
+                                    ` · sist avstemt ${formatDate(account.last_reconciled_at)}`}
+                            </p>
+                            {account.bank_balance && (
+                                <p className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                                    <span>
+                                        Banksaldo (bokført):{' '}
+                                        <span className="font-medium tabular-nums text-neutral-700">
+                                            {account.bank_balance.booked != null
+                                                ? formatNok(account.bank_balance.booked)
+                                                : '–'}
+                                        </span>
+                                    </span>
+                                    <span>
+                                        Banksaldo (inkl. reservert):{' '}
+                                        <span className="font-medium tabular-nums text-neutral-700">
+                                            {account.bank_balance.available != null
+                                                ? formatNok(account.bank_balance.available)
+                                                : '–'}
+                                        </span>
+                                    </span>
+                                    {account.bank_balance.synced_at && (
+                                        <span className="text-neutral-400">
+                                            oppdatert {formatDateTime(account.bank_balance.synced_at)}
+                                        </span>
+                                    )}
+                                </p>
+                            )}
+                        </div>
                     </div>
                 );
             })()}

@@ -164,6 +164,25 @@ class EnableBankingProvider implements BankDataProvider
         ));
     }
 
+    public function getBalances(string $accountId): BankBalance
+    {
+        $balances = $this->request('GET', "/accounts/{$accountId}/balances")->json('balances') ?? [];
+
+        return BankBalance::fromList(array_map(function (array $raw): array {
+            // Beløpet er usignert med en egen debet/kredit-indikator (som transaksjoner).
+            $amount = (float) data_get($raw, 'balance_amount.amount', 0);
+            if (strtoupper((string) ($raw['credit_debit_indicator'] ?? 'CRDT')) === 'DBIT') {
+                $amount = -abs($amount);
+            }
+
+            return [
+                'type' => (string) ($raw['balance_type'] ?? ''),
+                'amount' => $amount,
+                'currency' => data_get($raw, 'balance_amount.currency'),
+            ];
+        }, $balances));
+    }
+
     public function lastRateLimit(): ?array
     {
         return $this->lastRateLimit;

@@ -232,6 +232,23 @@ class EnableBankingProviderTest extends TestCase
         $this->assertFalse($result[1]->booked);
     }
 
+    public function test_banksaldo_normaliseres_med_fortegn_fra_indikator(): void
+    {
+        Http::fake([
+            'eb.test/accounts/acc-1/balances*' => Http::response(['balances' => [
+                // Kredittkortgjeld: usignert beløp med DBIT-indikator → negativt.
+                ['balance_amount' => ['amount' => '500.00', 'currency' => 'NOK'], 'balance_type' => 'CLBD', 'credit_debit_indicator' => 'DBIT'],
+                ['balance_amount' => ['amount' => '540.00', 'currency' => 'NOK'], 'balance_type' => 'ITAV', 'credit_debit_indicator' => 'DBIT'],
+            ]]),
+        ]);
+
+        $balance = (new EnableBankingProvider)->getBalances('acc-1');
+
+        $this->assertSame(-500.0, $balance->booked);
+        $this->assertSame(-540.0, $balance->available);
+        $this->assertSame('NOK', $balance->currency);
+    }
+
     public function test_429_kaster_rate_limit_exception(): void
     {
         Http::fake([

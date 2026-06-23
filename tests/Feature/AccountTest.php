@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Account;
+use App\Models\BankConnection;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
@@ -111,5 +112,38 @@ class AccountTest extends TestCase
     {
         $this->postJson('/api/accounts', ['name' => 'X', 'type' => 'crypto'])
             ->assertStatus(422);
+    }
+
+    public function test_kontodetalj_eksponerer_banksaldo_fra_siste_synk(): void
+    {
+        $account = Account::factory()->create();
+        $connection = BankConnection::create([
+            'institution_id' => 'SANDBOXFINANCE_SFIN0000',
+            'name' => 'Sandbox',
+            'consent_id' => 'req1',
+            'status' => 'LN',
+        ]);
+        $connection->bankAccounts()->create([
+            'account_id' => $account->id,
+            'external_id' => 'acc1',
+            'balance_booked' => 1500.25,
+            'balance_available' => 1420.00,
+            'balance_synced_at' => now(),
+        ]);
+
+        $this->getJson("/api/accounts/{$account->id}")
+            ->assertOk()
+            ->assertJsonPath('data.bank_synced', true)
+            ->assertJsonPath('data.bank_balance.booked', 1500.25)
+            ->assertJsonPath('data.bank_balance.available', 1420);
+    }
+
+    public function test_kontodetalj_uten_synket_saldo_gir_null(): void
+    {
+        $account = Account::factory()->create();
+
+        $this->getJson("/api/accounts/{$account->id}")
+            ->assertOk()
+            ->assertJsonPath('data.bank_balance', null);
     }
 }

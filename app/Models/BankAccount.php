@@ -17,6 +17,9 @@ class BankAccount extends Model
         'rate_limit',
         'rate_limit_remaining',
         'rate_limit_reset_at',
+        'balance_booked',
+        'balance_available',
+        'balance_synced_at',
     ];
 
     /**
@@ -27,6 +30,9 @@ class BankAccount extends Model
         return [
             'ignored' => 'boolean',
             'rate_limit_reset_at' => 'datetime',
+            'balance_booked' => 'decimal:2',
+            'balance_available' => 'decimal:2',
+            'balance_synced_at' => 'datetime',
         ];
     }
 

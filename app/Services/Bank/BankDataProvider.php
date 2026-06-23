@@ -79,6 +79,12 @@ interface BankDataProvider
     public function getTransactions(string $accountId, string $institutionId, string $dateFrom): array;
 
     /**
+     * Hent kontoens saldo fra banken (bokført + tilgjengelig/inkl. reservert).
+     * Hentes ved hver synk og vises mot appens egne klarerte/totale beløp.
+     */
+    public function getBalances(string $accountId): BankBalance;
+
+    /**
      * Rate-limit-info fra siste getTransactions-kall, eller null hvis ukjent.
      *
      * @return array{limit: ?int, remaining: ?int, reset_at: ?CarbonImmutable}|null

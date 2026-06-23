@@ -40,6 +40,30 @@ class AccountResource extends JsonResource
                 ?? $this->transactions()->needsCategorization()->count(),
             // Koblet til banksynk? (Overføringsregler kan kun peke på ikke-synkede.)
             'bank_synced' => (bool) ($this->bank_accounts_exists ?? $this->bankAccounts()->exists()),
+            // Bankens egen saldo fra siste synk (kun når bankAccounts er lastet,
+            // dvs. på kontodetalj). Aggregert over koblede kontoer med saldo.
+            'bank_balance' => $this->whenLoaded('bankAccounts', fn () => $this->bankBalancePayload()),
+        ];
+    }
+
+    /**
+     * Bankens saldo aggregert over de koblede bankkontoene som har en synket saldo.
+     * Null hvis ingen er synket ennå.
+     *
+     * @return array{booked: float, available: float, synced_at: string|null}|null
+     */
+    private function bankBalancePayload(): ?array
+    {
+        $synced = $this->bankAccounts->whereNotNull('balance_synced_at');
+
+        if ($synced->isEmpty()) {
+            return null;
+        }
+
+        return [
+            'booked' => round((float) $synced->sum('balance_booked'), 2),
+            'available' => round((float) $synced->sum('balance_available'), 2),
+            'synced_at' => $synced->max('balance_synced_at')?->toISOString(),
         ];
     }
 }

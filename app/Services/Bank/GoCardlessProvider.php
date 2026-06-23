@@ -151,6 +151,17 @@ class GoCardlessProvider implements BankDataProvider
         ];
     }
 
+    public function getBalances(string $accountId): BankBalance
+    {
+        $balances = $this->request('GET', "/accounts/{$accountId}/balances/")->json('balances') ?? [];
+
+        return BankBalance::fromList(array_map(fn (array $raw): array => [
+            'type' => (string) ($raw['balanceType'] ?? ''),
+            'amount' => (float) data_get($raw, 'balanceAmount.amount', 0),
+            'currency' => data_get($raw, 'balanceAmount.currency'),
+        ], $balances));
+    }
+
     public function lastRateLimit(): ?array
     {
         return $this->lastRateLimit;

@@ -10,6 +10,7 @@ use App\Models\Category;
 use App\Models\Rule;
 use App\Models\SyncEvent;
 use App\Models\Transaction;
+use App\Services\Bank\BankBalance;
 use App\Services\Bank\BankSyncService;
 use App\Services\Bank\GoCardlessProvider;
 use App\Services\Bank\NormalizedTransaction;
@@ -232,10 +233,13 @@ class BankSyncTest extends TestCase
         $this->assertSame(1, Transaction::where('pending', true)->count());
     }
 
-    public function test_laast_reservert_rad_bevares_ved_synk(): void
+    public function test_laast_reservert_rad_fjernes_ved_synk_uten_a_etterlate_duplikat(): void
     {
         $bankAccount = $this->linkedAccount();
-        // En reservert rad brukeren har redigert (locked) skal ikke fjernes.
+        // En reservert rad brukeren har kategorisert manuelt (locked) før den
+        // bokføres. Enable Banking gir bokført-versjonen en ny external_id, så
+        // dedupen kjenner den ikke igjen – beholdt vi den låste reserverte raden
+        // ville den bli foreldreløs som duplikat. Den skal derfor fjernes.
         Transaction::create([
             'account_id' => $bankAccount->account_id,
             'external_id' => 'pend-locked',
@@ -245,11 +249,50 @@ class BankSyncTest extends TestCase
             'pending' => true,
             'locked' => true,
         ]);
-        $this->provider->transactions['acc1'] = [];
+
+        // Synk: samme kjøp er nå bokført med en ny (stabil) id.
+        $this->provider->transactions['acc1'] = [$this->tx('booked-real', -200, booked: true)];
+        $this->sync();
+
+        // Kun den bokførte raden står igjen – ingen foreldreløs reservert.
+        $this->assertDatabaseMissing('transactions', ['external_id' => 'pend-locked']);
+        $this->assertDatabaseHas('transactions', [
+            'external_id' => 'booked-real',
+            'cleared' => true,
+            'pending' => false,
+        ]);
+        $this->assertSame(0, Transaction::where('pending', true)->count());
+    }
+
+    public function test_synk_lagrer_banksaldo_paa_bankkontoen(): void
+    {
+        $bankAccount = $this->linkedAccount();
+        $this->provider->transactions['acc1'] = [$this->tx('b1', -100)];
+        $this->provider->balances['acc1'] = new BankBalance(booked: 1234.50, available: 1180.00, currency: 'NOK');
 
         $this->sync();
 
-        $this->assertDatabaseHas('transactions', ['external_id' => 'pend-locked', 'pending' => true]);
+        $this->assertDatabaseHas('bank_accounts', [
+            'id' => $bankAccount->id,
+            'balance_booked' => 1234.50,
+            'balance_available' => 1180.00,
+        ]);
+        $this->assertNotNull($bankAccount->refresh()->balance_synced_at);
+    }
+
+    public function test_synk_fortsetter_selv_om_saldohenting_feiler(): void
+    {
+        $bankAccount = $this->linkedAccount();
+        $this->provider->transactions['acc1'] = [$this->tx('b1', -100)];
+        // Ingen balanse satt -> fake gir null/null; men test at en feil ikke stopper import.
+        $this->provider->balances['acc1'] = new BankBalance(booked: null, available: null);
+
+        $event = $this->sync();
+
+        // Transaksjonen importeres uansett, og synken er ikke markert som feilet.
+        $this->assertDatabaseHas('transactions', ['external_id' => 'b1']);
+        $this->assertSame(SyncEvent::STATUS_NEW, $event->status);
+        $this->assertNull($bankAccount->refresh()->balance_booked);
     }
 
     public function test_rate_limit_429_markerer_konto_ikke_synkbar(): void

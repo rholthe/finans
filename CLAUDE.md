@@ -132,9 +132,21 @@ Banking for prod-app-godkjenning.
   Overføringer kan splittes **kun** på det kategoriserte budsjett→overvåket-benet; øvrige ben røres ikke.
 - **Bokført vs reservert:** banksynk henter både bokførte og reserverte (`NormalizedTransaction.
   booked`). Reservert = `pending=true`/`cleared=false` (teller i activity, ikke i avstemming).
-  Bokførte dedup'es på `external_id`; reserverte mangler stabil id, så kontoens ulåste reserverte
+  Bokførte dedup'es på `external_id`; reserverte mangler stabil id, så **alle** kontoens reserverte
   rader byttes ut med dagens reserverte sett ved hver synk (en post som er bokført siden sist
-  forsvinner og kommer inn som bokført = «oppdatert ved bokføring»).
+  forsvinner og kommer inn som bokført = «oppdatert ved bokføring»). Også *låste* reserverte rader
+  fjernes: kategoriserer du en reservert rad manuelt blir den låst, men bokført-versjonen kommer inn
+  med ny external_id (EB gir `transaction_id` ≠ `entry_reference`), så beholdt vi den låste reserverte
+  raden ble den foreldreløs som duplikat. Reserverte er kortlevde og re-kategoriseres av reglene når de
+  bokføres, så vi prioriterer å unngå duplikater.
+- **Banksaldo fra banken:** ved hver synk hentes også kontoens saldo fra banken (`BankDataProvider::
+  getBalances` → `BankBalance`-DTO med `booked` = kun bokført og `available` = inkl. reservert; signert,
+  negativ = gjeld). Bankene oppgir flere `balanceType`/`balance_type`-er som normaliseres via en
+  prioritert typeliste (GoCardless camelCase + Enable Banking Berlin Group-koder i samme liste).
+  Lagres på `bank_accounts.balance_booked`/`balance_available`/`balance_synced_at`; saldo er sekundært
+  til transaksjonene, så en feil her logges som advarsel uten å feile synken. `AccountResource` eksponerer
+  `bank_balance` (aggregert over koblede bankkontoer, kun når `bankAccounts` er lastet = kontodetalj), vist
+  i heroen mot appens egne **klarert** og **totalt** så bankens tall er tydelig adskilt fra appens.
 - **Kredittkort = vanlig budsjettkonto som kan ha negativ saldo.** Ingen egen
   betalingskategori. Et kjøp på kortet er et helt vanlig kategorisert forbruk (trekker
   kategoriens `available`, ikke RTA), og gjelda reduserer «penger på konto». Kortet betales

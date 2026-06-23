@@ -28,6 +28,15 @@ export function formatDate(iso: string): string {
     });
 }
 
+export function formatDateTime(iso: string): string {
+    return new Date(iso).toLocaleString('nb-NO', {
+        day: '2-digit',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+}
+
 export function todayIso(): string {
     return new Date().toISOString().slice(0, 10);
 }

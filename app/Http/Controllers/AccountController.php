@@ -78,7 +78,9 @@ class AccountController extends Controller
 
     public function show(Account $account): AccountResource
     {
-        return AccountResource::make($account->loadSum('transactions', 'amount'));
+        return AccountResource::make(
+            $account->loadSum('transactions', 'amount')->load('bankAccounts'),
+        );
     }
 
     public function update(Request $request, Account $account): AccountResource
