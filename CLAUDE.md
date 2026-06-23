@@ -57,6 +57,7 @@ Banking for prod-app-godkjenning.
 - `app/Services/Bank/` — `BankDataProvider`-grensesnitt (leverandøruavhengig, «consent»),
   `BankConsent`-DTO, `BankProviderRegistry` (velger leverandør per tilkobling),
   `GoCardlessProvider`, `EnableBankingProvider`, `NormalizedTransaction`-DTO (m/`booked`-flagg),
+  `BankBalance`-DTO (bokført + tilgjengelig/inkl. reservert, normalisert fra balanceType-er),
   `BankRateLimitException` (429), `BankSyncService`, `Mapping/` (per-bank feltmapping)
 - `app/Services/Rules/` — `RuleEngine`, `RuleResult` (payee/memo + mål), `ReapplyRules` (leverandøruavhengig)
 - `app/Services/` — `BudgetService` (beregner available/RTA), `GoalService`, `ScheduledTransactionService`,
