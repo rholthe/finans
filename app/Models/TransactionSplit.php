@@ -2,13 +2,14 @@
 
 namespace App\Models;
 
+use Database\Factories\TransactionSplitFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class TransactionSplit extends Model
 {
-    /** @use HasFactory<\Database\Factories\TransactionSplitFactory> */
+    /** @use HasFactory<TransactionSplitFactory> */
     use HasFactory;
 
     protected $fillable = [
