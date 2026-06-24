@@ -207,7 +207,7 @@ class ScheduledTransactionTest extends TestCase
         $account = Account::factory()->create(['on_budget' => true]);
 
         // Inntekt nok i Ready to Assign, ingen postert aktivitet ennå.
-        $account->transactions()->create(['date' => '2026-01-01', 'amount' => 5000]);
+        $account->transactions()->create(['date' => '2026-01-01', 'amount' => 5000, 'rta' => true]);
 
         // Kommende regning senere i måneden → projisert tilgjengelig = -800.
         ScheduledTransaction::factory()

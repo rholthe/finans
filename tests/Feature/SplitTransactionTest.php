@@ -127,7 +127,7 @@ class SplitTransactionTest extends TestCase
         $klaer = Category::factory()->create();
 
         // Inntekt inn på RTA + et splittet forbruk.
-        Transaction::factory()->for($account)->create(['date' => '2026-03-01', 'amount' => 2000, 'category_id' => null]);
+        Transaction::factory()->for($account)->create(['date' => '2026-03-01', 'amount' => 2000, 'category_id' => null, 'rta' => true]);
         $tx = Transaction::factory()->for($account)->create(['date' => '2026-03-10', 'amount' => -1000, 'category_id' => null]);
 
         $this->putJson("/api/transactions/{$tx->id}", [
@@ -197,7 +197,7 @@ class SplitTransactionTest extends TestCase
         $mat = Category::factory()->create();
         $klaer = Category::factory()->create();
 
-        Transaction::factory()->for($account)->create(['date' => '2026-03-01', 'amount' => 2000, 'category_id' => null]);
+        Transaction::factory()->for($account)->create(['date' => '2026-03-01', 'amount' => 2000, 'category_id' => null, 'rta' => true]);
         $tx = Transaction::factory()->for($account)->create(['date' => '2026-03-10', 'amount' => -1000, 'category_id' => null]);
 
         $this->putJson("/api/transactions/{$tx->id}", [

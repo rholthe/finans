@@ -29,7 +29,7 @@ class GoalTest extends TestCase
     private function income(float $amount, string $date = '2026-01-01'): void
     {
         Account::factory()->create(['on_budget' => true])
-            ->transactions()->create(['date' => $date, 'amount' => $amount]);
+            ->transactions()->create(['date' => $date, 'amount' => $amount, 'rta' => true]);
     }
 
     // --- Mål-CRUD ---

@@ -158,6 +158,8 @@ export interface BudgetMonth {
     upcoming_income: number; // netto kommende ukategoriserte poster på budsjettkontoer
     projected_ready_to_assign: number;
     prior_uncategorized: number; // ukategoriserte transaksjoner datert før denne måneden
+    uncategorized_count: number; // hele restpotten som «mangler kategori» (alle datoer, eks. reserverte)
+    uncategorized_total: number; // signert sum av samme restpott
     groups: BudgetGroup[];
 }
 

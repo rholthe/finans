@@ -40,7 +40,7 @@ class CreditCardTest extends TestCase
     {
         $mat = Category::factory()->create();
         $checking = Account::factory()->create(['type' => 'bank', 'on_budget' => true]);
-        $checking->transactions()->create(['date' => '2026-01-01', 'amount' => 5000, 'is_starting_balance' => true]);
+        $checking->transactions()->create(['date' => '2026-01-01', 'amount' => 5000, 'rta' => true, 'is_starting_balance' => true]);
         $this->putJson("/api/budget/2026-01/categories/{$mat->id}", ['assigned' => 1000]);
 
         $visa = Account::factory()->credit()->create();

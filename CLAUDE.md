@@ -107,17 +107,23 @@ Banking for prod-app-godkjenning.
   der `availableAtStart` = rullering fra forrige måned + tildelt denne (= `available − denne månedens
   activity`), så **månedens forbruk teller ikke** og man kan bruke fritt av beløpet uten at målet blir
   uoppfylt. `target_balance_by_date` = spar opp til beløp innen dato (jevn pacing mot `available`).
-- **Ready to Assign = kun ukategoriserte inntekter − tildelt.** Kategorisert forbruk hører til
-  kategoriens `available`, ikke RTA. Identiteten `RTA + Σtilgjengelig = penger på budsjettkonto`
-  skal alltid holde (ingen lekkasje).
-- **Ukategorisert skal kategoriseres:** alle ukategoriserte rader teller mot RTA med fortegn (som
-  før), men en egen `transactions.rta`-kolonne skiller **bevisst plassert i RTA** (inntekt/lønn,
-  avstemmingsjustering, satt av bruker/regel) fra **ikke vurdert ennå**. `rta` endrer ikke RTA-
-  regnestykket. «Trenger kategorisering» = `Transaction::scopeNeedsCategorization` (on-budget ·
-  `category_id` null · `rta` false · ikke overføring/startsaldo/pending) → badge per konto, filter
-  på kontosiden, og et ikke-blokkerende advarsel-banner på budsjettsiden når tidligere måneder har
-  ukategoriserte. «Klar til å fordele (RTA)» er et eksplisitt valg i kategori-nedtrekkene.
-  Overvåkede (ikke-budsjett) kontoer har aldri kategori – kolonnen viser «ikke behov».
+- **Ready to Assign = kun `rta=true`-rader − tildelt.** Kun rader **bevisst plassert i RTA**
+  (`transactions.rta=true`) teller som tilflyt; kategorisert forbruk hører til kategoriens
+  `available`, og **ukategorisert forbruk (og reserverte rader) rører ikke RTA** – de ligger i en
+  synlig «mangler kategori»-rest til de kategoriseres eller eksplisitt RTA-merkes. Identiteten er
+  derfor `RTA + Σtilgjengelig + Σ(ukategorisert uten rta) = penger på budsjettkonto` (restpotten er
+  den synlige differansen, ingen skjult lekkasje). `readyToAssign()` summerer `rta=true` på
+  budsjettkonto (t.o.m. måned) minus tildelt.
+- **Ukategorisert skal kategoriseres:** en egen `transactions.rta`-kolonne skiller **bevisst plassert
+  i RTA** (inntekt/lønn, avstemmingsjustering, overføringstilflyt, satt av bruker/regel – disse teller
+  mot RTA) fra **ikke vurdert ennå** (teller **ikke** mot RTA). Det er **ingen automatikk**: innskudd/
+  inntekt får ikke `rta=true` av seg selv – det settes av en RTA-regel, avstemming, overføringstjeneste,
+  eller manuelt via «Klar til å fordele»-valget. «Trenger kategorisering» =
+  `Transaction::scopeNeedsCategorization` (on-budget · `category_id` null · `rta` false · ikke
+  overføring/startsaldo/pending) → badge per konto, filter på kontosiden, advarsel-banner for tidligere
+  måneder, og en «x transaksjoner mangler kategori (påvirker ikke RTA)»-linje i budsjett-headeren
+  (`uncategorized_count`/`uncategorized_total`). «Klar til å fordele (RTA)» er et eksplisitt valg i
+  kategori-nedtrekkene. Overvåkede (ikke-budsjett) kontoer har aldri kategori – kolonnen viser «ikke behov».
 - **Splitt på flere kategorier:** en transaksjon kan fordeles på flere kategorier via
   `transaction_splits` (`category_id` + signert `amount` + memo). **Pengeraden forblir én rad** i
   `transactions` (saldo/avstemming/RTA-identitet uberørt); splitt-forelderen får `category_id=null`

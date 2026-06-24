@@ -61,6 +61,7 @@ class ReconciliationTest extends TestCase
         $account->transactions()->create([
             'date' => '2026-01-10',
             'amount' => 1000,
+            'rta' => true,
             'cleared' => true,
         ]);
 
@@ -92,6 +93,7 @@ class ReconciliationTest extends TestCase
         $account->transactions()->create([
             'date' => '2026-01-10',
             'amount' => 1000,
+            'rta' => true,
             'cleared' => true,
         ]);
 

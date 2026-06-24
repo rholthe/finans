@@ -85,10 +85,11 @@ class BudgetTest extends TestCase
         $category = $this->category();
         $account = $this->budgetAccount();
 
-        // Inntekt (ukategorisert) = 5000 inn på budsjettkonto
+        // Inntekt = 5000 inn på budsjettkonto, eksplisitt plassert i RTA
         $account->transactions()->create([
             'date' => '2026-01-01',
             'amount' => 5000,
+            'rta' => true,
             'is_starting_balance' => true,
         ]);
         $this->putJson("/api/budget/2026-01/categories/{$category->id}", ['assigned' => 1000]);
@@ -96,6 +97,29 @@ class BudgetTest extends TestCase
         $this->getJson('/api/budget?month=2026-01')
             ->assertOk()
             ->assertJsonPath('ready_to_assign', 4000);
+    }
+
+    public function test_ukategorisert_forbruk_paavirker_ikke_ready_to_assign(): void
+    {
+        // Kun rader merket rta=true teller mot RTA. Ukategorisert forbruk (inkl.
+        // reservert) ligger i «mangler kategori»-restpotten og rører ikke RTA.
+        $account = $this->budgetAccount();
+
+        $account->transactions()->create([
+            'date' => '2026-01-01',
+            'amount' => 5000,
+            'rta' => true,
+        ]);
+        // Ukategorisert forbruk – skal IKKE trekke fra RTA.
+        $account->transactions()->create(['date' => '2026-01-10', 'amount' => -1500]);
+        // Reservert – heller ikke i restpotten.
+        $account->transactions()->create(['date' => '2026-01-11', 'amount' => -200, 'pending' => true]);
+
+        $this->getJson('/api/budget?month=2026-01')
+            ->assertOk()
+            ->assertJsonPath('ready_to_assign', 5000)
+            ->assertJsonPath('uncategorized_count', 1)
+            ->assertJsonPath('uncategorized_total', -1500);
     }
 
     public function test_kategorisert_forbruk_paavirker_ikke_ready_to_assign(): void
@@ -109,6 +133,7 @@ class BudgetTest extends TestCase
         $account->transactions()->create([
             'date' => '2026-01-01',
             'amount' => 5000,
+            'rta' => true,
             'is_starting_balance' => true,
         ]);
         $this->putJson("/api/budget/2026-01/categories/{$category->id}", ['assigned' => 1000]);

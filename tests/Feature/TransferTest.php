@@ -123,7 +123,7 @@ class TransferTest extends TestCase
     {
         $checking = Account::factory()->create(['type' => 'bank', 'on_budget' => true]);
         $savings = Account::factory()->create(['type' => 'bank', 'on_budget' => true]);
-        $checking->transactions()->create(['date' => '2026-01-01', 'amount' => 5000, 'is_starting_balance' => true]);
+        $checking->transactions()->create(['date' => '2026-01-01', 'amount' => 5000, 'rta' => true, 'is_starting_balance' => true]);
 
         $this->getJson('/api/budget?month=2026-01')->assertJsonPath('ready_to_assign', 5000);
 
@@ -157,7 +157,7 @@ class TransferTest extends TestCase
     {
         $sparing = Category::factory()->create();
         $budget = Account::factory()->create(['on_budget' => true]);
-        $budget->transactions()->create(['date' => '2026-01-01', 'amount' => 5000, 'is_starting_balance' => true]);
+        $budget->transactions()->create(['date' => '2026-01-01', 'amount' => 5000, 'rta' => true, 'is_starting_balance' => true]);
         $this->putJson("/api/budget/2026-01/categories/{$sparing->id}", ['assigned' => 1000]);
         $tracking = Account::factory()->tracking()->create();
 
@@ -207,7 +207,7 @@ class TransferTest extends TestCase
     {
         $mat = Category::factory()->create();
         $checking = Account::factory()->create(['type' => 'bank', 'on_budget' => true]);
-        $checking->transactions()->create(['date' => '2026-01-01', 'amount' => 5000, 'is_starting_balance' => true]);
+        $checking->transactions()->create(['date' => '2026-01-01', 'amount' => 5000, 'rta' => true, 'is_starting_balance' => true]);
         $this->putJson("/api/budget/2026-01/categories/{$mat->id}", ['assigned' => 1000]);
 
         $visa = Account::factory()->credit()->create(['name' => 'Visa']);

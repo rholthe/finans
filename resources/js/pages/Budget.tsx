@@ -179,6 +179,8 @@ export default function Budget() {
                     amount={budget.ready_to_assign}
                     upcomingIncome={budget.upcoming_income}
                     projected={budget.projected_ready_to_assign}
+                    uncategorizedCount={budget.uncategorized_count}
+                    uncategorizedTotal={budget.uncategorized_total}
                 />
             )}
 
@@ -389,10 +391,14 @@ function ReadyToAssign({
     amount,
     upcomingIncome,
     projected,
+    uncategorizedCount,
+    uncategorizedTotal,
 }: {
     amount: number;
     upcomingIncome: number;
     projected: number;
+    uncategorizedCount: number;
+    uncategorizedTotal: number;
 }) {
     const positive = amount >= 0;
     return (
@@ -412,6 +418,15 @@ function ReadyToAssign({
                 <div className="mt-1 flex items-center justify-between text-xs opacity-80">
                     <span>Med kommende inntekt ({formatNok(upcomingIncome)})</span>
                     <span className="tabular-nums">{formatNok(projected)}</span>
+                </div>
+            )}
+            {uncategorizedCount > 0 && (
+                <div className="mt-2 flex items-center justify-between gap-3 border-t border-current/10 pt-2 text-xs opacity-80">
+                    <Link to="/kontoer" className="underline hover:opacity-100">
+                        {uncategorizedCount} transaksjon{uncategorizedCount === 1 ? '' : 'er'} mangler kategori
+                        {' '}(påvirker ikke RTA)
+                    </Link>
+                    <span className="tabular-nums">{formatNok(uncategorizedTotal)}</span>
                 </div>
             )}
         </div>

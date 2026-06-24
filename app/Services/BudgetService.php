@@ -28,7 +28,7 @@ class BudgetService
      * Full budsjettvisning for én måned: grupper → kategorier med
      * assigned/activity/available, samt Ready to Assign.
      *
-     * @return array{month: string, ready_to_assign: float, upcoming_income: float, projected_ready_to_assign: float, prior_uncategorized: int, groups: list<array<string, mixed>>}
+     * @return array{month: string, ready_to_assign: float, upcoming_income: float, projected_ready_to_assign: float, prior_uncategorized: int, uncategorized_count: int, uncategorized_total: float, groups: list<array<string, mixed>>}
      */
     public function monthlyView(string $month): array
     {
@@ -100,6 +100,10 @@ class BudgetService
                 ->needsCategorization()
                 ->where('date', '<', $start->toDateString())
                 ->count(),
+            // Hele restpotten av rader som «mangler kategori» (alle datoer, eks.
+            // reserverte) – verken i RTA eller en kategori. Vises i headeren.
+            'uncategorized_count' => Transaction::query()->needsCategorization()->count(),
+            'uncategorized_total' => round((float) Transaction::query()->needsCategorization()->sum('amount'), 2),
             'groups' => $groups,
         ];
     }
@@ -322,20 +326,22 @@ class BudgetService
     }
 
     /**
-     * Penger som venter på å bli fordelt = inntekter inn på budsjettkontoer
-     * (t.o.m. måneden) minus alt som er tildelt (t.o.m. måneden).
+     * Penger som venter på å bli fordelt = beløp **bevisst plassert i RTA**
+     * (`rta=true`) inn på budsjettkontoer (t.o.m. måneden) minus alt som er
+     * tildelt (t.o.m. måneden).
      *
-     * Kun *ukategoriserte* transaksjoner (inntekt/innskudd) teller som tilflyt til
-     * RTA. Kategorisert forbruk hører hjemme i kategoriens «available», ikke her –
-     * teller vi det med, trekkes forbruket fra to ganger og pengene «lekker» ut av
-     * regnskapet (identiteten RTA + Σtilgjengelig = penger på konto brytes).
+     * Kun rader merket «Klar til å fordele» (`rta=true` – lønn/inntekt,
+     * avstemmingsjustering, overføringstilflyt, eller satt av bruker/regel)
+     * teller mot RTA. Ukategorisert *forbruk* (og reserverte rader) påvirker
+     * **ikke** RTA – det ligger i en synlig «mangler kategori»-rest til det
+     * kategoriseres eller eksplisitt RTA-merkes. Kategorisert forbruk hører
+     * hjemme i kategoriens «available», ikke her.
      */
     private function readyToAssign(CarbonImmutable $start, CarbonImmutable $end): float
     {
         $inBudget = (float) Transaction::query()
             ->whereHas('account', fn ($q) => $q->where('on_budget', true))
-            ->whereNull('category_id')
-            ->where('is_split', false)
+            ->where('rta', true)
             ->where('date', '<=', $end->toDateString())
             ->sum('amount');
 
