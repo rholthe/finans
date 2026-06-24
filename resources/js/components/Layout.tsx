@@ -7,7 +7,13 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
         isActive ? 'bg-neutral-900 text-white' : 'text-neutral-600 hover:bg-neutral-100'
     }`;
 
-export default function Layout({ children }: { children: ReactNode }) {
+export default function Layout({
+    children,
+    maxWidth = 'max-w-5xl',
+}: {
+    children: ReactNode;
+    maxWidth?: string;
+}) {
     const { logout } = useAuth();
 
     return (
@@ -57,7 +63,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                     </button>
                 </div>
             </header>
-            <main className="mx-auto max-w-5xl px-6 py-8">{children}</main>
+            <main className={`mx-auto ${maxWidth} px-6 py-8`}>{children}</main>
         </div>
     );
 }

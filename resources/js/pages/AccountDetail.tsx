@@ -180,7 +180,7 @@ export default function AccountDetail() {
 
     if (loading && !account) {
         return (
-            <Layout>
+            <Layout maxWidth="max-w-6xl">
                 <p className="text-neutral-400">Laster …</p>
             </Layout>
         );
@@ -188,7 +188,7 @@ export default function AccountDetail() {
 
     if (!account) {
         return (
-            <Layout>
+            <Layout maxWidth="max-w-6xl">
                 <p className="text-neutral-500">Konto ikke funnet.</p>
                 <Link to="/kontoer" className="text-sm text-neutral-900 underline">
                     Tilbake
@@ -198,7 +198,7 @@ export default function AccountDetail() {
     }
 
     return (
-        <Layout>
+        <Layout maxWidth="max-w-6xl">
             <Link to="/kontoer" className="text-sm text-neutral-500 hover:text-neutral-900">
                 ← Alle kontoer
             </Link>
