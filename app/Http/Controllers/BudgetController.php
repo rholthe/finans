@@ -219,4 +219,58 @@ class BudgetController extends Controller
 
         return response()->json($this->budget->monthlyView($month));
     }
+
+    /**
+     * Dekk overtrekk i en kategori fra en kilde: en annen kategori
+     * (`from_category_id`) eller «Ready to Assign» (utelatt kilde).
+     */
+    public function cover(Request $request, string $month, Category $category): JsonResponse
+    {
+        $validated = $request->validate([
+            'amount' => ['required', 'numeric', 'gt:0'],
+            'from_category_id' => [
+                'sometimes',
+                'nullable',
+                'integer',
+                Rule::notIn([$category->id]),
+                Rule::exists('categories', 'id'),
+            ],
+        ]);
+
+        $from = isset($validated['from_category_id'])
+            ? Category::findOrFail($validated['from_category_id'])
+            : null;
+
+        try {
+            $this->budget->cover($category, $from, $month, (float) $validated['amount']);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json($this->budget->monthlyView($month));
+    }
+
+    /**
+     * Hurtigbudsjett: sett tildelt for et utvalg kategorier basert på historikk
+     * (tildelt/forbruk forrige måned, eller snitt forbruk 3 mnd).
+     */
+    public function quickBudget(Request $request, string $month): JsonResponse
+    {
+        $validated = $request->validate([
+            'strategy' => [
+                'required',
+                Rule::in([
+                    BudgetService::QUICK_ASSIGNED_LAST_MONTH,
+                    BudgetService::QUICK_SPENT_LAST_MONTH,
+                    BudgetService::QUICK_AVG_SPENT_3M,
+                ]),
+            ],
+            'category_ids' => ['required', 'array', 'min:1'],
+            'category_ids.*' => ['integer', Rule::exists('categories', 'id')],
+        ]);
+
+        return response()->json(
+            $this->budget->quickBudget($month, $validated['strategy'], $validated['category_ids']),
+        );
+    }
 }

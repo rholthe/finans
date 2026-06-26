@@ -319,6 +319,38 @@ export async function moveBudget(
     return res.data;
 }
 
+/**
+ * Dekk overtrekk i en kategori fra en kilde: en annen kategori
+ * (`fromCategoryId`) eller «Klar til å fordele» (utelatt kilde → trekker fra RTA).
+ */
+export async function coverOverspending(
+    month: string,
+    categoryId: number,
+    amount: number,
+    fromCategoryId?: number,
+): Promise<BudgetMonth> {
+    const res = await api.post<BudgetMonth>(`/budget/${month}/categories/${categoryId}/cover`, {
+        amount,
+        from_category_id: fromCategoryId ?? null,
+    });
+    return res.data;
+}
+
+export type QuickBudgetStrategy = 'assigned-last-month' | 'spent-last-month' | 'avg-spent-3m';
+
+/** Hurtigbudsjett: sett tildelt for et utvalg kategorier basert på historikk. */
+export async function quickBudget(
+    month: string,
+    strategy: QuickBudgetStrategy,
+    categoryIds: number[],
+): Promise<BudgetMonth> {
+    const res = await api.post<BudgetMonth>(`/budget/${month}/quick-budget`, {
+        strategy,
+        category_ids: categoryIds,
+    });
+    return res.data;
+}
+
 // --- Rapporter ---
 
 export interface ReportPeriod {

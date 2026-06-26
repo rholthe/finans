@@ -60,7 +60,11 @@ Route::prefix('api')->group(function () {
             ->where('month', '\d{4}-\d{2}');
         Route::post('budget/{month}/categories/{category}/move', [BudgetController::class, 'move'])
             ->where('month', '\d{4}-\d{2}');
+        Route::post('budget/{month}/categories/{category}/cover', [BudgetController::class, 'cover'])
+            ->where('month', '\d{4}-\d{2}');
         Route::post('budget/{month}/auto-assign', [BudgetController::class, 'autoAssign'])
+            ->where('month', '\d{4}-\d{2}');
+        Route::post('budget/{month}/quick-budget', [BudgetController::class, 'quickBudget'])
             ->where('month', '\d{4}-\d{2}');
         Route::post('budget/{month}/sweep', [BudgetController::class, 'sweep'])
             ->where('month', '\d{4}-\d{2}');

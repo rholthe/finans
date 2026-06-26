@@ -15,6 +15,7 @@ import {
     apiErrorMessage,
     assignBudget,
     autoAssign,
+    coverOverspending,
     createCategory,
     createCategoryGroup,
     deleteGoal,
@@ -22,6 +23,7 @@ import {
     getBudget,
     getCategoryActivity,
     moveBudget,
+    quickBudget,
     resetAssignments,
     setGoal,
     sweepBudget,
@@ -29,6 +31,7 @@ import {
     updateCategoryGroup,
     type AutoAssignStrategy,
     type GoalInput,
+    type QuickBudgetStrategy,
 } from '@/lib/data';
 import { currentMonth, formatDate, formatNok, monthLabel, shiftMonth } from '@/lib/format';
 import {
@@ -54,6 +57,7 @@ export default function Budget() {
     const [autoBusy, setAutoBusy] = useState(false);
     const [selected, setSelected] = useState<Set<number>>(new Set());
     const [showBulkMove, setShowBulkMove] = useState(false);
+    const [showQuickBudget, setShowQuickBudget] = useState(false);
     const [showAddGroup, setShowAddGroup] = useState(false);
     const [showReset, setShowReset] = useState(false);
 
@@ -220,6 +224,9 @@ export default function Budget() {
                     <ActionButton onClick={() => setShowBulkMove(true)} disabled={autoBusy || noneSelected}>
                         Flytt valgte
                     </ActionButton>
+                    <ActionButton onClick={() => setShowQuickBudget(true)} disabled={autoBusy || noneSelected}>
+                        Hurtigbudsjett
+                    </ActionButton>
                     <ActionButton onClick={() => setShowReset(true)} disabled={autoBusy || noneSelected}>
                         Nullstill tildeling
                     </ActionButton>
@@ -266,6 +273,7 @@ export default function Budget() {
                                 allGroups={budget.groups}
                                 month={month}
                                 isPast={isPast}
+                                readyToAssign={budget.ready_to_assign}
                                 selected={selected}
                                 onToggleCategory={toggleCategory}
                                 onToggleGroup={toggleGroup}
@@ -293,6 +301,19 @@ export default function Budget() {
                         setShowBulkMove(false);
                     }}
                     onClose={() => setShowBulkMove(false)}
+                />
+            )}
+
+            {showQuickBudget && (
+                <QuickBudgetModal
+                    count={selected.size}
+                    month={month}
+                    onApplied={(updated) => {
+                        setBudget(updated);
+                        setShowQuickBudget(false);
+                    }}
+                    onClose={() => setShowQuickBudget(false)}
+                    selectedIds={Array.from(selected)}
                 />
             )}
 
@@ -438,6 +459,7 @@ function Group({
     allGroups,
     month,
     isPast,
+    readyToAssign,
     selected,
     onToggleCategory,
     onToggleGroup,
@@ -448,6 +470,7 @@ function Group({
     allGroups: BudgetGroup[];
     month: string;
     isPast: boolean;
+    readyToAssign: number;
     selected: Set<number>;
     onToggleCategory: (id: number) => void;
     onToggleGroup: (group: BudgetGroup) => void;
@@ -504,6 +527,7 @@ function Group({
                     allGroups={allGroups}
                     month={month}
                     isPast={isPast}
+                    readyToAssign={readyToAssign}
                     selected={selected.has(category.id)}
                     onToggle={() => onToggleCategory(category.id)}
                     onChange={onChange}
@@ -564,6 +588,7 @@ function CategoryRow({
     allGroups,
     month,
     isPast,
+    readyToAssign,
     selected,
     onToggle,
     onChange,
@@ -573,6 +598,7 @@ function CategoryRow({
     allGroups: BudgetGroup[];
     month: string;
     isPast: boolean;
+    readyToAssign: number;
     selected: boolean;
     onToggle: () => void;
     onChange: (budget: BudgetMonth) => void;
@@ -581,6 +607,10 @@ function CategoryRow({
     const [editingGoal, setEditingGoal] = useState(false);
     const [showActivity, setShowActivity] = useState(false);
     const [showMove, setShowMove] = useState(false);
+    const [showCover, setShowCover] = useState(false);
+
+    // Overtrekk (negativt tilgjengelig) dekkes via egen flyt; ellers flyttes penger ut.
+    const overspent = !isPast && category.available < 0;
 
     async function fund() {
         onChange(await fundCategory(month, category.id));
@@ -673,8 +703,8 @@ function CategoryRow({
                 <div className="flex justify-end">
                     <button
                         type="button"
-                        onClick={() => setShowMove(true)}
-                        title="Flytt penger til en annen kategori"
+                        onClick={() => (overspent ? setShowCover(true) : setShowMove(true))}
+                        title={overspent ? 'Dekk overtrekk' : 'Flytt penger til en annen kategori'}
                         className={`rounded-full px-2.5 py-0.5 text-sm font-medium tabular-nums hover:ring-2 hover:ring-neutral-200 ${availableBadge(category, isPast)}`}
                     >
                         {formatNok(category.available)}
@@ -711,6 +741,20 @@ function CategoryRow({
                         setShowMove(false);
                     }}
                     onClose={() => setShowMove(false)}
+                />
+            )}
+
+            {showCover && (
+                <CoverModal
+                    category={category}
+                    allGroups={allGroups}
+                    month={month}
+                    readyToAssign={readyToAssign}
+                    onCovered={(updated) => {
+                        onChange(updated);
+                        setShowCover(false);
+                    }}
+                    onClose={() => setShowCover(false)}
                 />
             )}
         </div>
@@ -1078,6 +1122,156 @@ function MoveModal({
     );
 }
 
+function CoverModal({
+    category,
+    allGroups,
+    month,
+    readyToAssign,
+    onCovered,
+    onClose,
+}: {
+    category: BudgetCategory;
+    allGroups: BudgetGroup[];
+    month: string;
+    readyToAssign: number;
+    onCovered: (budget: BudgetMonth) => void;
+    onClose: () => void;
+}) {
+    const deficit = Math.max(0, -category.available);
+    // Kategorier med tilgjengelig å gi (ekskluder seg selv).
+    const donors = allGroups.flatMap((g) =>
+        g.categories.filter((c) => c.id !== category.id && c.available > 0),
+    );
+    const [amount, setAmount] = useState(String(deficit));
+    const [source, setSource] = useState(''); // 'rta' eller kategori-id
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const sourceCategory = source && source !== 'rta' ? donors.find((c) => String(c.id) === source) : null;
+    const sourceAvailable = source === 'rta' ? readyToAssign : (sourceCategory?.available ?? 0);
+    const sourceLabel = source === 'rta' ? 'Klar til å fordele' : (sourceCategory?.name ?? null);
+
+    async function submit(e: FormEvent) {
+        e.preventDefault();
+        const value = Number(amount);
+        if (!value || value <= 0) {
+            setError('Oppgi et beløp større enn 0.');
+            return;
+        }
+        if (!source) {
+            setError('Velg hvor pengene skal hentes fra.');
+            return;
+        }
+        if (source !== 'rta' && value > sourceAvailable + 0.001) {
+            setError(`Kilden har bare ${formatNok(sourceAvailable)} tilgjengelig.`);
+            return;
+        }
+        setBusy(true);
+        setError(null);
+        try {
+            onCovered(
+                await coverOverspending(
+                    month,
+                    category.id,
+                    value,
+                    source === 'rta' ? undefined : Number(source),
+                ),
+            );
+        } catch (err) {
+            setError(apiErrorMessage(err, 'Kunne ikke dekke overtrekket.'));
+            setBusy(false);
+        }
+    }
+
+    return (
+        <Modal
+            title={`Dekk overtrekk i ${category.name}`}
+            size="md"
+            onClose={onClose}
+            footer={
+                <>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-500 hover:bg-neutral-100"
+                    >
+                        Avbryt
+                    </button>
+                    <button
+                        type="submit"
+                        form="cover-form"
+                        disabled={busy}
+                        className="rounded-lg bg-neutral-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+                    >
+                        Dekk
+                    </button>
+                </>
+            }
+        >
+            <form id="cover-form" onSubmit={submit} className="space-y-4">
+                <MoveFlow
+                    fromLabel={sourceLabel ?? 'Velg kilde …'}
+                    fromAmount={sourceAvailable}
+                    toLabel={`${category.name} (${formatNok(category.available)})`}
+                />
+                <label className="block text-xs font-medium text-neutral-600">
+                    Hent fra
+                    <select
+                        value={source}
+                        onChange={(e) => setSource(e.target.value)}
+                        className="mt-1 block w-full rounded-lg border border-neutral-300 px-2 py-1.5 text-sm focus:border-neutral-900 focus:outline-none"
+                    >
+                        <option value="">Velg …</option>
+                        <option value="rta">Klar til å fordele ({formatNok(readyToAssign)})</option>
+                        {allGroups.map((group) => {
+                            const options = group.categories.filter(
+                                (c) => c.id !== category.id && c.available > 0,
+                            );
+                            if (options.length === 0) return null;
+                            return (
+                                <optgroup key={group.id} label={group.name}>
+                                    {options.map((c) => (
+                                        <option key={c.id} value={c.id}>
+                                            {c.name} ({formatNok(c.available)})
+                                        </option>
+                                    ))}
+                                </optgroup>
+                            );
+                        })}
+                    </select>
+                </label>
+                <label className="block text-xs font-medium text-neutral-600">
+                    Beløp
+                    <div className="relative mt-1 w-40">
+                        <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-sm text-neutral-400">
+                            kr
+                        </span>
+                        <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={amount}
+                            onChange={(e) => setAmount(e.target.value)}
+                            autoFocus
+                            className="block w-full rounded-lg border border-neutral-300 py-1.5 pl-8 pr-14 text-right text-sm tabular-nums focus:border-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-200"
+                        />
+                        <button
+                            type="button"
+                            onClick={() => setAmount(String(deficit))}
+                            title="Dekk hele overtrekket"
+                            className="absolute inset-y-0 right-0 my-1 mr-1 rounded px-1.5 text-xs font-medium text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+                        >
+                            Alt
+                        </button>
+                    </div>
+                </label>
+
+                {error && <p className="text-sm text-red-600">{error}</p>}
+            </form>
+        </Modal>
+    );
+}
+
 function BulkMoveModal({
     sources,
     allGroups,
@@ -1168,6 +1362,76 @@ function BulkMoveModal({
                     {error && <p className="text-sm text-red-600">{error}</p>}
                 </form>
             )}
+        </Modal>
+    );
+}
+
+const QUICK_BUDGET_OPTIONS: { strategy: QuickBudgetStrategy; label: string; description: string }[] = [
+    {
+        strategy: 'assigned-last-month',
+        label: 'Tildelt forrige måned',
+        description: 'Sett tildelt likt det du tildelte måneden før.',
+    },
+    {
+        strategy: 'spent-last-month',
+        label: 'Brukt forrige måned',
+        description: 'Sett tildelt likt forbruket måneden før.',
+    },
+    {
+        strategy: 'avg-spent-3m',
+        label: 'Snitt forbruk (3 mnd)',
+        description: 'Sett tildelt likt gjennomsnittlig forbruk de tre foregående månedene.',
+    },
+];
+
+function QuickBudgetModal({
+    count,
+    month,
+    selectedIds,
+    onApplied,
+    onClose,
+}: {
+    count: number;
+    month: string;
+    selectedIds: number[];
+    onApplied: (budget: BudgetMonth) => void;
+    onClose: () => void;
+}) {
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    async function apply(strategy: QuickBudgetStrategy) {
+        setBusy(true);
+        setError(null);
+        try {
+            onApplied(await quickBudget(month, strategy, selectedIds));
+        } catch (err) {
+            setError(apiErrorMessage(err, 'Kunne ikke sette hurtigbudsjett.'));
+            setBusy(false);
+        }
+    }
+
+    return (
+        <Modal title="Hurtigbudsjett" size="md" onClose={onClose}>
+            <p className="mb-4 text-sm text-neutral-600">
+                Sett tildelt for {count} valgt{count === 1 ? ' kategori' : 'e kategorier'} basert på historikk.
+                Tildelingen overskrives.
+            </p>
+            <div className="space-y-2">
+                {QUICK_BUDGET_OPTIONS.map((opt) => (
+                    <button
+                        key={opt.strategy}
+                        type="button"
+                        onClick={() => apply(opt.strategy)}
+                        disabled={busy}
+                        className="flex w-full flex-col rounded-xl border border-neutral-200 px-4 py-3 text-left hover:border-neutral-900 hover:bg-neutral-50 disabled:opacity-50"
+                    >
+                        <span className="text-sm font-medium text-neutral-800">{opt.label}</span>
+                        <span className="text-xs text-neutral-500">{opt.description}</span>
+                    </button>
+                ))}
+            </div>
+            {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
         </Modal>
     );
 }

@@ -24,6 +24,12 @@ use Illuminate\Support\Facades\DB;
  */
 class BudgetService
 {
+    public const QUICK_ASSIGNED_LAST_MONTH = 'assigned-last-month';
+
+    public const QUICK_SPENT_LAST_MONTH = 'spent-last-month';
+
+    public const QUICK_AVG_SPENT_3M = 'avg-spent-3m';
+
     /**
      * Full budsjettvisning for én måned: grupper → kategorier med
      * assigned/activity/available, samt Ready to Assign.
@@ -323,6 +329,105 @@ class BudgetService
         });
 
         return round($moved, 2);
+    }
+
+    /**
+     * Dekk overtrekk i en kategori ved å hente penger fra en kilde. Kilden er
+     * enten en annen kategori (`$from` satt – flytter tildeling, netto 0, RTA
+     * uberørt – som move()) eller «Ready to Assign» (`$from` null – øker
+     * målkategoriens tildeling, som trekker fra RTA).
+     *
+     * @throws \InvalidArgumentException ved ugyldig beløp eller kilde
+     */
+    public function cover(Category $overspent, ?Category $from, string $month, float $amount): void
+    {
+        if ($amount <= 0) {
+            throw new \InvalidArgumentException('Beløpet må være større enn 0.');
+        }
+
+        if ($from === null) {
+            // Kilde = RTA: øk målkategoriens tildeling med beløpet.
+            $start = $this->normalizeMonth($month);
+            $assigned = (float) (BudgetAllocation::query()
+                ->where('category_id', $overspent->id)
+                ->where('month', $start->toDateString())
+                ->value('assigned') ?? 0.0);
+
+            $this->assign($overspent, $month, round($assigned + $amount, 2));
+
+            return;
+        }
+
+        // Kilde = annen kategori: gjenbruk flyttelogikken (validerer tilgjengelig).
+        $this->move($from, $overspent, $month, $amount);
+    }
+
+    /**
+     * Hurtigbudsjett: sett tildelt for et utvalg kategorier basert på historikk.
+     * Verdien settes absolutt (ikke additivt). Returnerer oppdatert månedsvisning.
+     *
+     *  - assigned-last-month: tildelt forrige måned
+     *  - spent-last-month:    forbruk forrige måned (gulv 0, dvs. ignorer inntekt)
+     *  - avg-spent-3m:        snitt forbruk de 3 foregående månedene (gulv 0)
+     *
+     * @param  list<int>  $categoryIds
+     * @return array<string, mixed>
+     */
+    public function quickBudget(string $month, string $strategy, array $categoryIds): array
+    {
+        $start = $this->normalizeMonth($month);
+        $only = array_flip($categoryIds);
+
+        $targets = $this->quickBudgetTargets($start, $strategy);
+
+        DB::transaction(function () use ($only, $targets, $month): void {
+            foreach ($targets as $categoryId => $amount) {
+                if (! isset($only[$categoryId])) {
+                    continue;
+                }
+
+                $category = Category::find($categoryId);
+                if (! $category) {
+                    continue;
+                }
+
+                $this->assign($category, $month, round($amount, 2));
+            }
+        });
+
+        return $this->monthlyView($month);
+    }
+
+    /**
+     * Beregn ønsket tildeling per kategori for en hurtigbudsjett-strategi.
+     *
+     * @return array<int, float>
+     */
+    private function quickBudgetTargets(CarbonImmutable $start, string $strategy): array
+    {
+        if ($strategy === self::QUICK_ASSIGNED_LAST_MONTH) {
+            $prev = $start->subMonth();
+
+            return $this->assignedByCategory(equalTo: $prev)->all();
+        }
+
+        if ($strategy === self::QUICK_SPENT_LAST_MONTH) {
+            $prev = $start->subMonth();
+            $activity = $this->activityByCategory(from: $prev, to: $prev->endOfMonth());
+
+            return $activity->map(fn (float $a): float => max(0.0, -$a))->all();
+        }
+
+        // avg-spent-3m: snitt av forbruk de 3 foregående månedene (gulv 0).
+        $totals = [];
+        for ($i = 1; $i <= 3; $i++) {
+            $m = $start->subMonths($i);
+            foreach ($this->activityByCategory(from: $m, to: $m->endOfMonth()) as $categoryId => $a) {
+                $totals[$categoryId] = ($totals[$categoryId] ?? 0.0) + max(0.0, -$a);
+            }
+        }
+
+        return array_map(fn (float $sum): float => $sum / 3, $totals);
     }
 
     /**

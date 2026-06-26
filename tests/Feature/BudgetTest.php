@@ -6,7 +6,9 @@ use App\Models\Account;
 use App\Models\Category;
 use App\Models\ScheduledTransaction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
 
 class BudgetTest extends TestCase
@@ -340,5 +342,150 @@ class BudgetTest extends TestCase
             ->assertJsonPath('groups.0.categories.0.assigned', 0);
 
         $this->assertDatabaseHas('budget_allocations', ['category_id' => $a->id, 'assigned' => 0]);
+    }
+
+    /**
+     * Hent kategoriene fra en budsjettrespons, nøklet på id.
+     *
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function categoriesById(TestResponse $response): Collection
+    {
+        return collect($response->json('groups'))
+            ->flatMap(fn (array $group): array => $group['categories'])
+            ->keyBy('id');
+    }
+
+    public function test_dekk_overtrekk_fra_kildekategori_lar_rta_vaere(): void
+    {
+        $overspent = $this->category();
+        $donor = $this->category();
+        $account = $this->budgetAccount();
+
+        $account->transactions()->create([
+            'date' => '2026-01-01',
+            'amount' => 5000,
+            'rta' => true,
+            'is_starting_balance' => true,
+        ]);
+        $this->putJson("/api/budget/2026-01/categories/{$overspent->id}", ['assigned' => 100]);
+        $this->putJson("/api/budget/2026-01/categories/{$donor->id}", ['assigned' => 500]);
+        $account->transactions()->create([
+            'category_id' => $overspent->id,
+            'date' => '2026-01-15',
+            'amount' => -300,
+        ]);
+
+        $response = $this->postJson("/api/budget/2026-01/categories/{$overspent->id}/cover", [
+            'amount' => 200,
+            'from_category_id' => $donor->id,
+        ])->assertOk();
+
+        $cats = $this->categoriesById($response);
+        $this->assertEquals(0, $cats[$overspent->id]['available']);
+        $this->assertEquals(300, $cats[$donor->id]['available']);
+        // Netto tildeling uendret (600) → RTA uberørt.
+        $response->assertJsonPath('ready_to_assign', 4400);
+    }
+
+    public function test_dekk_overtrekk_fra_rta_trekker_fra_rta(): void
+    {
+        $overspent = $this->category();
+        $account = $this->budgetAccount();
+
+        $account->transactions()->create([
+            'date' => '2026-01-01',
+            'amount' => 5000,
+            'rta' => true,
+            'is_starting_balance' => true,
+        ]);
+        $this->putJson("/api/budget/2026-01/categories/{$overspent->id}", ['assigned' => 100]);
+        $account->transactions()->create([
+            'category_id' => $overspent->id,
+            'date' => '2026-01-15',
+            'amount' => -300,
+        ]);
+
+        $response = $this->postJson("/api/budget/2026-01/categories/{$overspent->id}/cover", [
+            'amount' => 200,
+        ])->assertOk();
+
+        $cats = $this->categoriesById($response);
+        $this->assertEquals(0, $cats[$overspent->id]['available']);
+        $this->assertEquals(300, $cats[$overspent->id]['assigned']);
+        // RTA: 5000 − tildelt 300 = 4700.
+        $response->assertJsonPath('ready_to_assign', 4700);
+    }
+
+    public function test_dekk_overtrekk_avvises_naar_kilde_mangler_tilgjengelig(): void
+    {
+        $overspent = $this->category();
+        $donor = $this->category();
+        $this->putJson("/api/budget/2026-01/categories/{$donor->id}", ['assigned' => 100]);
+
+        $this->postJson("/api/budget/2026-01/categories/{$overspent->id}/cover", [
+            'amount' => 200,
+            'from_category_id' => $donor->id,
+        ])->assertStatus(422);
+
+        $this->assertDatabaseMissing('budget_allocations', ['category_id' => $overspent->id]);
+    }
+
+    public function test_hurtigbudsjett_tildelt_forrige_maaned(): void
+    {
+        $category = $this->category();
+        $this->putJson("/api/budget/2026-01/categories/{$category->id}", ['assigned' => 1000]);
+
+        $response = $this->postJson('/api/budget/2026-02/quick-budget', [
+            'strategy' => 'assigned-last-month',
+            'category_ids' => [$category->id],
+        ])->assertOk();
+
+        $this->assertEquals(1000, $this->categoriesById($response)[$category->id]['assigned']);
+    }
+
+    public function test_hurtigbudsjett_brukt_forrige_maaned(): void
+    {
+        $category = $this->category();
+        $account = $this->budgetAccount();
+        $account->transactions()->create([
+            'category_id' => $category->id,
+            'date' => '2026-01-15',
+            'amount' => -400,
+        ]);
+
+        $response = $this->postJson('/api/budget/2026-02/quick-budget', [
+            'strategy' => 'spent-last-month',
+            'category_ids' => [$category->id],
+        ])->assertOk();
+
+        $this->assertEquals(400, $this->categoriesById($response)[$category->id]['assigned']);
+    }
+
+    public function test_hurtigbudsjett_snitt_forbruk_3_mnd_roerer_ikke_uvalgte(): void
+    {
+        $category = $this->category();
+        $other = $this->category();
+        $account = $this->budgetAccount();
+
+        foreach (['2026-01-10' => -300, '2026-02-10' => -600, '2026-03-10' => -900] as $date => $amount) {
+            $account->transactions()->create([
+                'category_id' => $category->id,
+                'date' => $date,
+                'amount' => $amount,
+            ]);
+        }
+
+        $response = $this->postJson('/api/budget/2026-04/quick-budget', [
+            'strategy' => 'avg-spent-3m',
+            'category_ids' => [$category->id],
+        ])->assertOk();
+
+        $cats = $this->categoriesById($response);
+        // (300 + 600 + 900) / 3 = 600.
+        $this->assertEquals(600, $cats[$category->id]['assigned']);
+        // Uvalgt kategori er urørt.
+        $this->assertEquals(0, $cats[$other->id]['assigned']);
+        $this->assertDatabaseMissing('budget_allocations', ['category_id' => $other->id]);
     }
 }

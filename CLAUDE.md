@@ -244,6 +244,12 @@ Banking for prod-app-godkjenning.
      **Fortid er lesemodus:** mål gjelder kun inneværende/fremtidige måneder, så for `month <
      currentMonth()` skjules mål-UI, bulk-/auto-knapper og seleksjon – kun tildelt/forbruk/
      tilgjengelig vises, og endringer gjøres manuelt i radene (tildelt-input, flytt, navn).
+     **Dekk overtrekk:** klikk på et negativt tilgjengelig-badge åpner `CoverModal` (i stedet for
+     `MoveModal`) der underskuddet hentes fra en valgt kilde – enten en kategori med positiv
+     tilgjengelig (`BudgetService::cover` → gjenbruker `move`, RTA uberørt) eller «Klar til å fordele»
+     (kilde utelatt → øker tildeling, trekker fra RTA). **Hurtigbudsjett:** bulk-knapp på valgte
+     kategorier som setter tildelt absolutt fra historikk (`BudgetService::quickBudget`): tildelt
+     forrige måned / brukt forrige måned / snitt forbruk 3 mnd (forbruk gulves til 0).
    - ✅ Ukategorisert-håndhevelse: `rta`-kolonne, badge per konto + filter, «Klar til å
      fordele»-valg, varsel i avstemmingsmodal
    - ✅ Overføringer: budsjett↔overvåket-kategorisering via `TransferService`, egen
