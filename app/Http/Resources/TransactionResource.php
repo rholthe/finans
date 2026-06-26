@@ -49,6 +49,8 @@ class TransactionResource extends JsonResource
             // lastet, dvs. i søk – per-konto-listen laster dem ikke).
             'account' => $this->whenLoaded('account', fn () => $this->account?->name),
             'category' => $this->whenLoaded('category', fn () => $this->category?->name),
+            // Samsvarer med ukategorisert-filteret (scopeNeedsCategorization) – kun i søk.
+            'needs_categorization' => $this->whenLoaded('account', fn () => $this->needsCategorization()),
         ];
     }
 }

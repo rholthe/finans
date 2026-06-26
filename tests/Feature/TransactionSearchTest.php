@@ -81,6 +81,31 @@ class TransactionSearchTest extends TestCase
             ->assertJsonPath('data.0.amount', -200);
     }
 
+    public function test_needs_categorization_flagg_samsvarer_med_ukategorisert_filter(): void
+    {
+        $account = $this->budgetAccount();
+
+        // Ekte ukategorisert (teller mot filteret → amber-merke i UI).
+        $account->transactions()->create(['date' => '2026-01-10', 'amount' => -200, 'payee' => 'Rema']);
+        // Reservert post uten kategori: vises i lista, men trenger ikke kategori ennå.
+        $account->transactions()->create(['date' => '2026-01-11', 'amount' => -75, 'payee' => 'Kiwi', 'pending' => true]);
+
+        $all = $this->getJson("/api/transactions/search?account_id={$account->id}")
+            ->assertOk()
+            ->assertJsonPath('meta.total', 2)
+            ->json('data');
+
+        $byPayee = collect($all)->keyBy('payee');
+        $this->assertTrue($byPayee['Rema']['needs_categorization']);
+        $this->assertFalse($byPayee['Kiwi']['needs_categorization']);
+
+        // Filteret returnerer nøyaktig raden som er flagget needs_categorization.
+        $this->getJson("/api/transactions/search?account_id={$account->id}&uncategorized=1")
+            ->assertOk()
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.0.payee', 'Rema');
+    }
+
     public function test_resultat_eksponerer_konto_og_kategorinavn(): void
     {
         $account = Account::factory()->create(['name' => 'Brukskonto', 'on_budget' => true]);

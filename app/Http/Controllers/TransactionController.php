@@ -60,7 +60,7 @@ class TransactionController extends Controller
         ]);
 
         $transactions = Transaction::query()
-            ->with(['account:id,name', 'category:id,name', 'transfer.account', 'splits'])
+            ->with(['account:id,name,on_budget', 'category:id,name', 'transfer.account', 'splits'])
             ->when($validated['q'] ?? null, function ($query, string $term): void {
                 $like = '%'.$term.'%';
                 $query->where(fn ($q) => $q

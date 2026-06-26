@@ -62,6 +62,7 @@ export interface Transaction {
     reconciled_at: string | null; // satt når raden er avstemt (null = ikke avstemt)
     account?: string; // kontonavn (kun i kontouavhengig søk)
     category?: string | null; // kategorinavn (kun i kontouavhengig søk)
+    needs_categorization?: boolean; // samsvarer med ukategorisert-filteret (kun i søk)
     is_starting_balance: boolean;
     transfer_id: number | null; // det andre benet i en overføring (null = vanlig transaksjon)
     transfer_account?: string | null; // navnet på motkontoen i overføringen

@@ -212,8 +212,10 @@ export default function Sok() {
                                             tx.category
                                         ) : tx.rta ? (
                                             <span className="text-neutral-400">Klar til å fordele</span>
-                                        ) : (
+                                        ) : tx.needs_categorization ? (
                                             <span className="text-amber-600">Mangler kategori</span>
+                                        ) : (
+                                            <span className="text-neutral-400">—</span>
                                         )}
                                     </td>
                                     <td

@@ -82,6 +82,21 @@ class Transaction extends Model
     }
 
     /**
+     * Per-rad-speiling av {@see scopeNeedsCategorization} (krever lastet `account`).
+     * Brukes til visning så «Mangler kategori»-merket samsvarer med ukategorisert-filteret.
+     */
+    public function needsCategorization(): bool
+    {
+        return (bool) $this->account?->on_budget
+            && $this->category_id === null
+            && ! $this->rta
+            && ! $this->is_split
+            && $this->transfer_id === null
+            && ! $this->is_starting_balance
+            && ! $this->pending;
+    }
+
+    /**
      * @return BelongsTo<Category, $this>
      */
     public function category(): BelongsTo
