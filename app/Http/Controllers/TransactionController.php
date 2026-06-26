@@ -41,6 +41,47 @@ class TransactionController extends Controller
         return TransactionResource::collection($transactions);
     }
 
+    /**
+     * Kontouavhengig søk på tvers av alle kontoer. Fritekst matcher
+     * payee/memo/bank_description; i tillegg dato-, beløps-, konto- og
+     * ukategorisert-filter. Nyeste først, paginert.
+     */
+    public function search(Request $request): AnonymousResourceCollection
+    {
+        $validated = $request->validate([
+            'q' => ['nullable', 'string', 'max:255'],
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date'],
+            'min_amount' => ['nullable', 'numeric'],
+            'max_amount' => ['nullable', 'numeric'],
+            'account_id' => ['nullable', 'integer', Rule::exists('accounts', 'id')],
+            'uncategorized' => ['nullable', 'boolean'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:500'],
+        ]);
+
+        $transactions = Transaction::query()
+            ->with(['account:id,name', 'category:id,name', 'transfer.account', 'splits'])
+            ->when($validated['q'] ?? null, function ($query, string $term): void {
+                $like = '%'.$term.'%';
+                $query->where(fn ($q) => $q
+                    ->where('payee', 'like', $like)
+                    ->orWhere('memo', 'like', $like)
+                    ->orWhere('bank_description', 'like', $like));
+            })
+            ->when($validated['from'] ?? null, fn ($q, $from) => $q->whereDate('date', '>=', $from))
+            ->when($validated['to'] ?? null, fn ($q, $to) => $q->whereDate('date', '<=', $to))
+            ->when(isset($validated['min_amount']), fn ($q) => $q->where('amount', '>=', $validated['min_amount']))
+            ->when(isset($validated['max_amount']), fn ($q) => $q->where('amount', '<=', $validated['max_amount']))
+            ->when($validated['account_id'] ?? null, fn ($q, $id) => $q->where('account_id', $id))
+            ->when($validated['uncategorized'] ?? false, fn ($q) => $q->needsCategorization())
+            ->orderByDesc('date')
+            ->orderByDesc('id')
+            ->paginate($validated['per_page'] ?? 50)
+            ->withQueryString();
+
+        return TransactionResource::collection($transactions);
+    }
+
     public function store(Request $request, Account $account): JsonResponse
     {
         $validated = $this->validatePayload($request);

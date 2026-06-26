@@ -151,6 +151,38 @@ export async function getTransactions(
     return res.data;
 }
 
+export interface TransactionSearchFilters {
+    q?: string;
+    accountId?: number;
+    from?: string;
+    to?: string;
+    minAmount?: number;
+    maxAmount?: number;
+    uncategorized?: boolean;
+    perPage?: number;
+    page?: number;
+}
+
+/** Kontouavhengig søk på tvers av alle kontoer. */
+export async function searchTransactions(
+    filters: TransactionSearchFilters = {},
+): Promise<Paginated<Transaction>> {
+    const res = await api.get<Paginated<Transaction>>('/transactions/search', {
+        params: {
+            q: filters.q || undefined,
+            account_id: filters.accountId || undefined,
+            from: filters.from || undefined,
+            to: filters.to || undefined,
+            min_amount: filters.minAmount ?? undefined,
+            max_amount: filters.maxAmount ?? undefined,
+            uncategorized: filters.uncategorized ? 1 : undefined,
+            per_page: filters.perPage,
+            page: filters.page,
+        },
+    });
+    return res.data;
+}
+
 /** Kjør reglene på et avgrenset sett (de viste transaksjonene). Returnerer antall oppdatert. */
 export async function applyRulesToTransactions(ids: number[]): Promise<number> {
     const res = await api.post<{ updated: number }>('/transactions/apply-rules', {

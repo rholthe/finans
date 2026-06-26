@@ -41,6 +41,7 @@ Route::prefix('api')->group(function () {
             ->only(['index', 'store', 'update', 'destroy']);
         Route::get('accounts/{account}/transactions', [TransactionController::class, 'index']);
         Route::post('accounts/{account}/transactions', [TransactionController::class, 'store']);
+        Route::get('transactions/search', [TransactionController::class, 'search']);
         Route::post('transactions/apply-rules', [TransactionController::class, 'applyRules']);
         Route::apiResource('transactions', TransactionController::class)->only(['update', 'destroy']);
 

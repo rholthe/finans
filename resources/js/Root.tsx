@@ -8,6 +8,7 @@ import Regler from '@/pages/Regler';
 import Innstillinger from '@/pages/Innstillinger';
 import Accounts from '@/pages/Accounts';
 import AccountDetail from '@/pages/AccountDetail';
+import Sok from '@/pages/Sok';
 import MobilRegistrer from '@/pages/MobilRegistrer';
 import { lazy, Suspense, type ReactNode } from 'react';
 
@@ -60,6 +61,7 @@ export default function App() {
                     <Route path="/registrer" element={<RequireAuth><MobilRegistrer /></RequireAuth>} />
                     <Route path="/planlagte" element={<RequireAuth><Planlagte /></RequireAuth>} />
                     <Route path="/kontoer" element={<RequireAuth><Accounts /></RequireAuth>} />
+                    <Route path="/sok" element={<RequireAuth><Sok /></RequireAuth>} />
                     <Route
                         path="/rapporter"
                         element={

@@ -38,6 +38,9 @@ export default function Layout({
                             <NavLink to="/kontoer" className={navClass}>
                                 Kontoer
                             </NavLink>
+                            <NavLink to="/sok" className={navClass}>
+                                Søk
+                            </NavLink>
                             <NavLink to="/planlagte" className={navClass}>
                                 Planlagte
                             </NavLink>

@@ -291,6 +291,10 @@ Banking for prod-app-godkjenning.
      iban/external_id via `BankAccount::displayName()`) – brukt i frontend + synk-/utløps-e-poster
    - ✅ Innstillinger: rapport-e-post-mottaker (flyttet fra env); stylet med seksjonskort
      (ikon-headere for banksynk/e-post), undertittel og inline lagre-tilbakemelding
+   - ✅ Kontouavhengig søk (`/sok`): fritekst (payee/memo/bank_description) + konto-, dato-,
+     beløps- og ukategorisert-filter på tvers av alle kontoer (`TransactionController::search`,
+     paginert). Read-only resultatliste med klikk-gjennom til kontoen; `TransactionResource`
+     eksponerer `account`/`category`-navn via `whenLoaded` (kun i søk – per-konto-listen er uendret).
    - Konvensjon: bekreftelser bruker `Modal`-komponenten, ikke nettleserens `confirm()`
 
 ===

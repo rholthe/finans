@@ -45,6 +45,10 @@ class TransactionResource extends JsonResource
                 $this->transfer_id !== null && $this->relationLoaded('transfer'),
                 fn () => $this->transfer?->account?->name,
             ),
+            // Konto-/kategorinavn for kontouavhengig visning (kun når relasjonen er
+            // lastet, dvs. i søk – per-konto-listen laster dem ikke).
+            'account' => $this->whenLoaded('account', fn () => $this->account?->name),
+            'category' => $this->whenLoaded('category', fn () => $this->category?->name),
         ];
     }
 }

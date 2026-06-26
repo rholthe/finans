@@ -60,6 +60,8 @@ export interface Transaction {
     splits?: TransactionSplit[]; // splittlinjer (kun med når relasjonen er lastet)
     pending: boolean; // reservert bankpost (ikke bokført ennå); byttes ut ved bokføring
     reconciled_at: string | null; // satt når raden er avstemt (null = ikke avstemt)
+    account?: string; // kontonavn (kun i kontouavhengig søk)
+    category?: string | null; // kategorinavn (kun i kontouavhengig søk)
     is_starting_balance: boolean;
     transfer_id: number | null; // det andre benet i en overføring (null = vanlig transaksjon)
     transfer_account?: string | null; // navnet på motkontoen i overføringen
