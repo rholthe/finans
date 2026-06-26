@@ -93,6 +93,7 @@ Route::prefix('api')->group(function () {
         Route::get('reports/income-expense', [ReportController::class, 'incomeExpense']);
         Route::get('reports/category-trend', [ReportController::class, 'categoryTrend']);
         Route::get('reports/net-worth', [ReportController::class, 'netWorth']);
+        Route::get('reports/age-of-money', [ReportController::class, 'ageOfMoney']);
 
         Route::get('settings', [SettingsController::class, 'show']);
         Route::put('settings', [SettingsController::class, 'update']);

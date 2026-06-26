@@ -13,6 +13,7 @@ import type {
     Goal,
     GoalType,
     Institution,
+    AgeOfMoneyReport,
     CategoryTrendReport,
     IncomeExpenseReport,
     NetWorthReport,
@@ -380,6 +381,11 @@ export async function getCategoryTrendReport(
 
 export async function getNetWorthReport(period: ReportPeriod): Promise<NetWorthReport> {
     const res = await api.get<NetWorthReport>('/reports/net-worth', { params: period });
+    return res.data;
+}
+
+export async function getAgeOfMoneyReport(period: ReportPeriod): Promise<AgeOfMoneyReport> {
+    const res = await api.get<AgeOfMoneyReport>('/reports/age-of-money', { params: period });
     return res.data;
 }
 

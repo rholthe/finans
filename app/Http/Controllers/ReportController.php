@@ -45,6 +45,13 @@ class ReportController extends Controller
         return response()->json($this->reports->netWorth($from, $to));
     }
 
+    public function ageOfMoney(Request $request): JsonResponse
+    {
+        [$from, $to] = $this->period($request);
+
+        return response()->json($this->reports->ageOfMoney($from, $to));
+    }
+
     /**
      * Valgt periode som [from, to] i «YYYY-MM». Default: siste 12 måneder.
      *

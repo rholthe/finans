@@ -203,6 +203,93 @@ class ReportService
     }
 
     /**
+     * Age of Money: beløpsvektet alder (i dager) på pengene som brukes. Hver
+     * utstrøm matches FIFO mot de eldste innstrømmene; alderen er antall dager
+     * fra penger kom inn til de ble brukt. Age of Money for en måned er snittet
+     * av de **siste 10 utstrømmene** t.o.m. månedsslutt (samme tilnærming som YNAB).
+     *
+     * Grunnlag: kontantstrøm på budsjettkontoer, ekskl. overføringer (interne) og
+     * reserverte (kortlevde). Positiv startsaldo teller som den eldste innstrømmen.
+     * FIFO går over hele historikken (også før perioden), så innstrøm som finansierer
+     * forbruk i perioden teller med.
+     *
+     * @return array{from: string, to: string, current: ?int, months: list<array{month: string, age: ?int}>}
+     */
+    public function ageOfMoney(string $from, string $to): array
+    {
+        [$start, $end] = $this->range($from, $to);
+
+        $rows = Transaction::query()
+            ->whereHas('account', fn ($q) => $q->where('on_budget', true))
+            ->whereNull('transfer_id')
+            ->where('pending', false)
+            ->where('date', '<=', $end->toDateTimeString())
+            ->orderBy('date')
+            ->orderBy('id')
+            ->get(['date', 'amount']);
+
+        // Del kontantstrømmen i FIFO-lotter av innstrøm og en liste av utstrøm.
+        $inflows = [];
+        $outflows = [];
+        foreach ($rows as $row) {
+            $amount = (float) $row->amount;
+            $date = CarbonImmutable::parse($row->date);
+            if ($amount > 0) {
+                $inflows[] = ['date' => $date, 'remaining' => $amount];
+            } elseif ($amount < 0) {
+                $outflows[] = ['date' => $date, 'amount' => -$amount];
+            }
+        }
+
+        // Matche hver utstrøm mot de eldste gjenværende innstrømmene. Alderen
+        // beløpsvektes; en utstrøm uten dekkende innstrøm (eller dekket av senere
+        // innstrøm) teller som 0 dager (negativ alder klemmes til 0).
+        $i = 0;
+        $aged = [];
+        foreach ($outflows as $out) {
+            $need = $out['amount'];
+            $weighted = 0.0;
+
+            while ($need > 0.0001 && $i < count($inflows)) {
+                $take = min($need, $inflows[$i]['remaining']);
+                $ageDays = max(0, (int) round(($out['date']->timestamp - $inflows[$i]['date']->timestamp) / 86400));
+
+                $weighted += $take * $ageDays;
+                $need -= $take;
+                $inflows[$i]['remaining'] -= $take;
+
+                if ($inflows[$i]['remaining'] <= 0.0001) {
+                    $i++;
+                }
+            }
+
+            $aged[] = ['date' => $out['date'], 'age' => $weighted / $out['amount']];
+        }
+
+        $months = [];
+        foreach ($this->months($start, $end) as $ym) {
+            $monthEnd = CarbonImmutable::parse($ym)->endOfMonth();
+
+            $upTo = array_values(array_filter($aged, fn (array $a): bool => $a['date']->lte($monthEnd)));
+            $last10 = array_slice($upTo, -10);
+
+            $months[] = [
+                'month' => $ym,
+                'age' => $last10 === []
+                    ? null
+                    : (int) round(array_sum(array_column($last10, 'age')) / count($last10)),
+            ];
+        }
+
+        return [
+            'from' => $start->format('Y-m'),
+            'to' => $end->format('Y-m'),
+            'current' => $months === [] ? null : end($months)['age'],
+            'months' => $months,
+        ];
+    }
+
+    /**
      * DB-agnostisk uttrykk som trekker ut «YYYY-MM» fra dato-kolonnen.
      * SQLite (lokalt) bruker strftime; MySQL/MariaDB (prod) bruker DATE_FORMAT.
      */

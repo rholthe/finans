@@ -65,7 +65,11 @@ Banking for prod-app-godkjenning.
   overføring, planlagt overføring og overføringsregel), `ReconciliationService` (avstemming:
   klarert saldo → justering), `ReportService` (rapportaggregeringer fra transactions;
   måneds-gruppering er DB-agnostisk via `monthExpr()` – `strftime` på SQLite, `DATE_FORMAT` på
-  MySQL/MariaDB. Rå dato-SQL må alltid forgrenes på driver, ellers feiler det i prod men ikke lokalt)
+  MySQL/MariaDB. Rå dato-SQL må alltid forgrenes på driver, ellers feiler det i prod men ikke lokalt.
+  **Age of Money** (`ageOfMoney()`): FIFO-matcher innstrøm mot utstrøm på budsjettkontoer (ekskl.
+  overføringer/reserverte) → beløpsvektet alder i dager; per måned snittet av siste 10 utstrømmer.
+  NB: `date` lagres som datetime, så øvre datogrense må være `endOfMonth()->toDateTimeString()`
+  (`23:59:59`), ellers droppes transaksjoner på månedens siste dag i string-sammenligningen)
 - `app/Jobs/SyncBankTransactionsJob.php` — køet banksynk (WithoutOverlapping)
 - `app/Support/AppSettings.php` — brukerstyrte innstillinger (nøkkel/verdi)
 - `app/Enums/` — `AccountType`, `GoalType`, `ScheduleFrequency`, `RuleApplies`, `RuleTarget`
@@ -237,7 +241,8 @@ Banking for prod-app-godkjenning.
 8. 🟡 Avansert:
    - ✅ Kredittkort som vanlig konto (kan ha negativ saldo) + overføringer for nedbetaling
    - ✅ Avstemming (reconciliation)
-   - ✅ Rapporter (forbruk per kategori, inntekt/forbruk, kategoritrend, nettoformue – Recharts)
+   - ✅ Rapporter (forbruk per kategori, inntekt/forbruk, pengenes alder/Age of Money,
+     kategoritrend, nettoformue – Recharts)
    - ✅ 2. bankleverandør (Enable Banking; normalisert consent-grensesnitt + provider-kolonne;
      bokført/reservert + 429-håndtering)
 9. 🟡 Tverrgående: design/UX-polish + brukertilbakemeldinger (side for side)

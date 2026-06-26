@@ -118,4 +118,57 @@ class ReportTest extends TestCase
             ->assertOk()
             ->assertJsonPath('total', 0);
     }
+
+    public function test_age_of_money_beregner_alder_paa_brukte_penger(): void
+    {
+        $category = Category::factory()->create();
+        $account = $this->budgetAccount();
+
+        // Inntekt 1. jan, brukt 11. jan → pengene er 10 dager gamle.
+        $account->transactions()->create(['date' => '2026-01-01', 'amount' => 1000]);
+        $account->transactions()->create(['category_id' => $category->id, 'date' => '2026-01-11', 'amount' => -1000]);
+
+        $this->getJson('/api/reports/age-of-money?from=2026-01&to=2026-01')
+            ->assertOk()
+            ->assertJsonPath('months.0.age', 10)
+            ->assertJsonPath('current', 10);
+    }
+
+    public function test_age_of_money_fifo_vekter_eldste_penger_foerst(): void
+    {
+        $category = Category::factory()->create();
+        $account = $this->budgetAccount();
+
+        // 1000 inn 1. jan, 1000 inn 21. jan, 1500 brukt 31. jan.
+        // FIFO: 1000 @ 30 dager + 500 @ 10 dager = (30000 + 5000) / 1500 ≈ 23.
+        $account->transactions()->create(['date' => '2026-01-01', 'amount' => 1000]);
+        $account->transactions()->create(['date' => '2026-01-21', 'amount' => 1000]);
+        $account->transactions()->create(['category_id' => $category->id, 'date' => '2026-01-31', 'amount' => -1500]);
+
+        $this->getJson('/api/reports/age-of-money?from=2026-01&to=2026-01')
+            ->assertOk()
+            ->assertJsonPath('months.0.age', 23);
+    }
+
+    public function test_age_of_money_ignorerer_overforinger_og_overvaakede(): void
+    {
+        $category = Category::factory()->create();
+        $account = $this->budgetAccount();
+        $other = $this->budgetAccount();
+
+        $account->transactions()->create(['date' => '2026-01-01', 'amount' => 1000]);
+        $account->transactions()->create(['category_id' => $category->id, 'date' => '2026-01-11', 'amount' => -1000]);
+
+        // En overføring skal ikke regnes som inn-/utstrøm i Age of Money.
+        $this->postJson('/api/transfers', [
+            'from_account_id' => $account->id,
+            'to_account_id' => $other->id,
+            'date' => '2026-01-15',
+            'amount' => 500,
+        ])->assertCreated();
+
+        $this->getJson('/api/reports/age-of-money?from=2026-01&to=2026-01')
+            ->assertOk()
+            ->assertJsonPath('months.0.age', 10);
+    }
 }

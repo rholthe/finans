@@ -18,6 +18,7 @@ import {
 } from 'recharts';
 import Layout from '@/components/Layout';
 import {
+    getAgeOfMoneyReport,
     getCategoryTrendReport,
     getIncomeExpenseReport,
     getNetWorthReport,
@@ -27,6 +28,7 @@ import {
 } from '@/lib/data';
 import { currentMonth, formatNok, formatNokShort, shiftMonth } from '@/lib/format';
 import type {
+    AgeOfMoneyReport,
     Category,
     CategoryTrendReport,
     IncomeExpenseReport,
@@ -82,6 +84,7 @@ export default function Rapporter() {
             <div className="mt-6 space-y-6">
                 <SpendingCard period={period} />
                 <IncomeExpenseCard period={period} />
+                <AgeOfMoneyCard period={period} />
                 <CategoryTrendCard period={period} />
                 <NetWorthCard period={period} />
             </div>
@@ -199,6 +202,61 @@ function IncomeExpenseCard({ period }: { period: ReportPeriod }) {
                         <Line dataKey="net" name="Netto" stroke="#2563eb" strokeWidth={2} dot={false} />
                     </ComposedChart>
                 </ResponsiveContainer>
+            )}
+        </Card>
+    );
+}
+
+function daysTooltip(value: number | string | readonly (number | string)[] | undefined): string {
+    const n = Number(value);
+    return `${n} ${n === 1 ? 'dag' : 'dager'}`;
+}
+
+function AgeOfMoneyCard({ period }: { period: ReportPeriod }) {
+    const [data, setData] = useState<AgeOfMoneyReport | null>(null);
+
+    useEffect(() => {
+        getAgeOfMoneyReport(period).then(setData).catch(() => setData(null));
+    }, [period]);
+
+    const rows = (data?.months ?? []).map((m) => ({ ...m, label: monthShort(m.month) }));
+    const hasData = rows.some((r) => r.age !== null);
+
+    return (
+        <Card title="Pengenes alder (Age of Money)">
+            {!data || !hasData ? (
+                <Empty text="Ikke nok inn-/utbetalinger til å beregne ennå." />
+            ) : (
+                <>
+                    <p className="mb-4 text-sm text-neutral-500">
+                        Pengene du bruker nå er i snitt{' '}
+                        <span className="text-2xl font-semibold tabular-nums text-cyan-700">
+                            {data.current ?? '–'}
+                        </span>{' '}
+                        dager gamle. Høyere tall betyr at du lever mindre «fra hånd til munn».
+                    </p>
+                    <ResponsiveContainer width="100%" height={260}>
+                        <LineChart data={rows}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                            <XAxis dataKey="label" fontSize={12} />
+                            <YAxis
+                                tickFormatter={(v) => `${v} d`}
+                                fontSize={12}
+                                width={48}
+                                allowDecimals={false}
+                            />
+                            <Tooltip formatter={daysTooltip} />
+                            <Line
+                                dataKey="age"
+                                name="Pengenes alder"
+                                stroke="#0891b2"
+                                strokeWidth={2}
+                                dot={{ r: 3 }}
+                                connectNulls
+                            />
+                        </LineChart>
+                    </ResponsiveContainer>
+                </>
             )}
         </Card>
     );

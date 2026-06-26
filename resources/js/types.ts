@@ -223,6 +223,13 @@ export interface NetWorthReport {
     months: { month: string; assets: number; debt: number; net: number }[];
 }
 
+export interface AgeOfMoneyReport {
+    from: string;
+    to: string;
+    current: number | null; // alder (dager) ved slutten av perioden
+    months: { month: string; age: number | null }[];
+}
+
 export type ScheduleFrequency =
     | 'weekly'
     | 'biweekly'
