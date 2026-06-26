@@ -20,6 +20,7 @@ class Account extends Model
         'currency',
         'closed',
         'note',
+        'interest_rate',
     ];
 
     /**
@@ -31,7 +32,18 @@ class Account extends Model
             'type' => AccountType::class,
             'on_budget' => 'boolean',
             'closed' => 'boolean',
+            'interest_rate' => 'decimal:2',
         ];
+    }
+
+    /** Effektiv årsrente (prosent) omregnet til månedsrente, eller null. */
+    public function monthlyInterestRate(): ?float
+    {
+        if ($this->interest_rate === null) {
+            return null;
+        }
+
+        return (1 + (float) $this->interest_rate / 100) ** (1 / 12) - 1;
     }
 
     /**

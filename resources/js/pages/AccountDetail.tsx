@@ -1,4 +1,6 @@
 import {
+    lazy,
+    Suspense,
     useCallback,
     useEffect,
     useMemo,
@@ -18,10 +20,12 @@ import {
     createTransfer,
     deleteTransaction,
     getAccount,
+    getLoanProjection,
     getTransactions,
     listAccounts,
     listCategoryGroups,
     reconcileAccount,
+    updateAccount,
     updateTransaction,
     type NewTransaction,
 } from '@/lib/data';
@@ -31,9 +35,13 @@ import {
     type Account,
     type AccountType,
     type CategoryGroup,
+    type LoanProjection,
     type PageMeta,
     type Transaction,
 } from '@/types';
+
+// Recharts lazy-lastes så biblioteket ikke havner i hovedbundelen.
+const LoanProjectionChart = lazy(() => import('@/components/LoanProjectionChart'));
 
 const PER_PAGE_OPTIONS = [25, 50, 100, 200, 500];
 
@@ -96,6 +104,7 @@ export default function AccountDetail() {
     } | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
     const [showReconcile, setShowReconcile] = useState(false);
+    const [showLoan, setShowLoan] = useState(false);
 
     const reload = useCallback(async () => {
         const [acc, paged] = await Promise.all([
@@ -275,12 +284,22 @@ export default function AccountDetail() {
                                         {formatNok(account.balance)}
                                     </span>
                                 </div>
-                                <button
-                                    onClick={() => setShowReconcile(true)}
-                                    className="rounded-lg border border-neutral-300 bg-white/70 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-white"
-                                >
-                                    Avstem
-                                </button>
+                                <div className="flex gap-2">
+                                    {account.type === 'loan' && (
+                                        <button
+                                            onClick={() => setShowLoan(true)}
+                                            className="rounded-lg border border-neutral-300 bg-white/70 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-white"
+                                        >
+                                            🏠 Lån
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={() => setShowReconcile(true)}
+                                        className="rounded-lg border border-neutral-300 bg-white/70 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-white"
+                                    >
+                                        Avstem
+                                    </button>
+                                </div>
                             </div>
                         </div>
                         <div className="mt-4 border-t border-neutral-200/70 pt-3">
@@ -338,6 +357,14 @@ export default function AccountDetail() {
                         setNotice(message);
                         reload();
                     }}
+                />
+            )}
+
+            {showLoan && account && (
+                <LoanModal
+                    account={account}
+                    onClose={() => setShowLoan(false)}
+                    onSaved={(updated) => setAccount(updated)}
                 />
             )}
 
@@ -880,6 +907,166 @@ function DeleteTransactionModal({
                     klarerte saldoen.
                 </p>
             )}
+        </Modal>
+    );
+}
+
+function LoanStat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+    return (
+        <div className="rounded-xl bg-neutral-50 px-3 py-2 ring-1 ring-neutral-100">
+            <div className="text-[0.65rem] font-medium uppercase tracking-wide text-neutral-400">{label}</div>
+            <div className={`text-sm font-semibold tabular-nums ${accent ? 'text-cyan-700' : 'text-neutral-800'}`}>
+                {value}
+            </div>
+        </div>
+    );
+}
+
+function LoanModal({
+    account,
+    onClose,
+    onSaved,
+}: {
+    account: Account;
+    onClose: () => void;
+    onSaved: (account: Account) => void;
+}) {
+    const [rate, setRate] = useState(account.interest_rate != null ? String(account.interest_rate) : '');
+    const [savingRate, setSavingRate] = useState(false);
+    const [rateError, setRateError] = useState<string | null>(null);
+    const [basis, setBasis] = useState<3 | 6 | 12>(6);
+    const [projection, setProjection] = useState<LoanProjection | null>(null);
+    const [loading, setLoading] = useState(true);
+
+    const loadProjection = useCallback(() => {
+        setLoading(true);
+        getLoanProjection(account.id, basis)
+            .then(setProjection)
+            .catch(() => setProjection(null))
+            .finally(() => setLoading(false));
+    }, [account.id, basis]);
+
+    useEffect(() => {
+        loadProjection();
+    }, [loadProjection]);
+
+    async function saveRate() {
+        const value = rate.trim() === '' ? null : Number(rate.replace(',', '.'));
+        if (value !== null && (!Number.isFinite(value) || value < 0 || value > 100)) {
+            setRateError('Oppgi en rente mellom 0 og 100.');
+            return;
+        }
+        setSavingRate(true);
+        setRateError(null);
+        try {
+            const updated = await updateAccount(account.id, { interest_rate: value });
+            onSaved(updated);
+            loadProjection();
+        } catch (e) {
+            setRateError(apiErrorMessage(e, 'Kunne ikke lagre renten.'));
+        } finally {
+            setSavingRate(false);
+        }
+    }
+
+    const payoffLabel = projection?.payoff_month
+        ? new Date(
+              Number(projection.payoff_month.split('-')[0]),
+              Number(projection.payoff_month.split('-')[1]) - 1,
+              1,
+          ).toLocaleDateString('nb-NO', { month: 'long', year: 'numeric' })
+        : null;
+
+    return (
+        <Modal title={`Lån – ${account.name}`} size="lg" onClose={onClose}>
+            <div className="space-y-5">
+                <div>
+                    <label className="block text-xs font-medium text-neutral-600">
+                        Effektiv årsrente (%)
+                        <div className="mt-1 flex items-center gap-2">
+                            <input
+                                type="text"
+                                inputMode="decimal"
+                                value={rate}
+                                onChange={(e) => setRate(e.target.value)}
+                                placeholder="f.eks. 5,5"
+                                className="w-32 rounded-lg border border-neutral-300 px-3 py-1.5 text-right text-sm tabular-nums focus:border-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-200"
+                            />
+                            <button
+                                type="button"
+                                onClick={saveRate}
+                                disabled={savingRate}
+                                className="rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+                            >
+                                Lagre
+                            </button>
+                            <span className="text-xs text-neutral-400">Frivillig. Tom = ingen renteberegning.</span>
+                        </div>
+                    </label>
+                    {rateError && <p className="mt-1 text-sm text-red-600">{rateError}</p>}
+                </div>
+
+                <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-neutral-600">Innbetaling siste</span>
+                    {([3, 6, 12] as const).map((b) => (
+                        <button
+                            key={b}
+                            type="button"
+                            onClick={() => setBasis(b)}
+                            className={`rounded-lg px-2.5 py-1 text-xs font-medium ${
+                                basis === b
+                                    ? 'bg-neutral-900 text-white'
+                                    : 'border border-neutral-300 text-neutral-600 hover:bg-neutral-100'
+                            }`}
+                        >
+                            {b} mnd
+                        </button>
+                    ))}
+                </div>
+
+                {loading ? (
+                    <p className="py-12 text-center text-sm text-neutral-400">Laster …</p>
+                ) : !projection ? (
+                    <p className="py-12 text-center text-sm text-neutral-400">Kunne ikke hente projeksjon.</p>
+                ) : (
+                    <>
+                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                            <LoanStat label="Gjeld nå" value={formatNok(projection.balance)} />
+                            <LoanStat label="Snittinnbetaling" value={formatNok(projection.avg_payment)} />
+                            <LoanStat
+                                label="Nedbetalt"
+                                value={payoffLabel ?? '—'}
+                                accent={payoffLabel !== null}
+                            />
+                            <LoanStat
+                                label="Gjenstående renter"
+                                value={projection.payoff_month ? formatNok(projection.total_interest) : '—'}
+                            />
+                        </div>
+
+                        {projection.interest_rate == null && (
+                            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 ring-1 ring-amber-100">
+                                Sett effektiv rente for å ta med renter i projeksjonen.
+                            </p>
+                        )}
+
+                        {projection.balance >= 0 ? (
+                            <p className="py-8 text-center text-sm text-neutral-400">Lånet er nedbetalt. 🎉</p>
+                        ) : projection.payoff_month === null ? (
+                            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-100">
+                                Med nåværende innbetaling ({formatNok(projection.avg_payment)}/mnd) dekkes ikke
+                                renten – lånet blir ikke nedbetalt. Øk innbetalingen.
+                            </p>
+                        ) : (
+                            <Suspense
+                                fallback={<p className="py-12 text-center text-sm text-neutral-400">Laster graf …</p>}
+                            >
+                                <LoanProjectionChart series={projection.series} />
+                            </Suspense>
+                        )}
+                    </>
+                )}
+            </div>
         </Modal>
     );
 }

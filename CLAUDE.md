@@ -49,9 +49,9 @@ Banking for prod-app-godkjenning.
 ## Struktur
 
 - `routes/web.php` — `/api/*`-ruter + SPA catch-all
-- `routes/console.php` — scheduler (nattlig banksynk-jobb + `transactions:post-due`)
+- `routes/console.php` — scheduler (nattlig banksynk-jobb + `transactions:post-due` + `loans:post-interest`)
 - `app/Http/Controllers/` — Auth, Account, Transaction, Transfer, Reconciliation, Report, Budget,
-  Category, CategoryGroup, Goal, ScheduledTransaction, Bank, Rule, Settings
+  Category, CategoryGroup, Goal, ScheduledTransaction, Bank, Rule, Settings, Loan
 - `app/Http/Middleware/Authenticated.php` — alias `auth.session`, beskytter API-ruter
 - `app/Http/Middleware/EnsureScheduledTransactionsPosted.php` — posterer forfalte planlagte ved hvert API-kall
 - `app/Services/Bank/` — `BankDataProvider`-grensesnitt (leverandøruavhengig, «consent»),
@@ -60,7 +60,8 @@ Banking for prod-app-godkjenning.
   `BankBalance`-DTO (bokført + tilgjengelig/inkl. reservert, normalisert fra balanceType-er),
   `BankRateLimitException` (429), `BankSyncService`, `Mapping/` (per-bank feltmapping)
 - `app/Services/Rules/` — `RuleEngine`, `RuleResult` (payee/memo + mål), `ReapplyRules` (leverandøruavhengig)
-- `app/Services/` — `BudgetService` (beregner available/RTA), `GoalService`, `ScheduledTransactionService`,
+- `app/Services/` — `BudgetService` (beregner available/RTA), `GoalService`, `LoanService` (lån:
+  månedlig renteberegning + nedbetalingsprojeksjon), `ScheduledTransactionService`,
   `TransferService` (oppretter overføringsben m/budsjett↔overvåket-regler – delt av manuell
   overføring, planlagt overføring og overføringsregel), `ReconciliationService` (avstemming:
   klarert saldo → justering), `ReportService` (rapportaggregeringer fra transactions;
@@ -74,7 +75,8 @@ Banking for prod-app-godkjenning.
 - `app/Support/AppSettings.php` — brukerstyrte innstillinger (nøkkel/verdi)
 - `app/Enums/` — `AccountType`, `GoalType`, `ScheduleFrequency`, `RuleApplies`, `RuleTarget`
 - `app/Console/Commands/` — `SetPassword`, `SyncBankTransactions` (`bank:sync`),
-  `PostDueScheduledTransactions`, `ReapplyRules` (`rules:reapply`), `CheckBankConsentExpiry`
+  `PostDueScheduledTransactions`, `PostLoanInterest` (`loans:post-interest` – månedlig lånerente),
+  `ReapplyRules` (`rules:reapply`), `CheckBankConsentExpiry`
   (`bank:check-expiry`), `DumpAspspMetadata` (`bank:aspsp-metadata` – dumper rå Enable Banking-
   ASPSP-metadata for feilsøking av `required_psu_headers` m.m.)
 - `resources/js/` — React-SPA (`app.tsx` entry, `Root.tsx` ruter, `pages/`, `components/`,
@@ -169,6 +171,14 @@ Banking for prod-app-godkjenning.
   kategoriens `available`, ikke RTA), og gjelda reduserer «penger på konto». Kortet betales
   ned med en overføring fra en annen konto. (En YNAB-stil betalingskategori ble vurdert og
   forkastet til fordel for denne enkelheten.)
+- **Lån (`AccountType::Loan`):** valgfri **effektiv årsrente** (`accounts.interest_rate`, prosent;
+  `Account::monthlyInterestRate()` = `(1+r/100)^(1/12)−1`). Er den satt, autoposterer
+  `loans:post-interest` (scheduler natt til den 1.) månedlig rente på gjelda som en `Renter`-
+  transaksjon – idempotent via `external_id = loan-interest:YYYY-MM`. `LoanService::projection()`
+  framskriver gjelda mot null med nåværende rente og en fast månedlig innbetaling = snitt av positive
+  innbetalinger ÷ antall basismåneder (3/6/12); dekker innbetalingen ikke første måneds rente →
+  «ikke nedbetalbar». Vises i en «Lån»-modal på kontodetalj (rente-input + basis-velger + graf +
+  payoff-dato); diagrammet (`LoanProjectionChart`) lazy-lastes så Recharts holdes utenfor hovedbundelen.
 - **Avstemming** gjør klarert saldo (sum av `cleared`-transaksjoner) lik oppgitt faktisk
   banksaldo ved å bokføre en **ukategorisert** «Avstemmingsjustering» for avviket. Justeringen
   påvirker dermed RTA på budsjettkontoer (positivt avvik øker, negativt reduserer), mens

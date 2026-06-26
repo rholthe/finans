@@ -17,3 +17,6 @@ Schedule::job(new SyncBankTransactionsJob(trigger: 'auto'))->dailyAt('05:00');
 
 // Varsle om bankgodkjenninger som snart utløper (etter synk har oppdatert valid_until).
 Schedule::command('bank:check-expiry')->dailyAt('06:00')->withoutOverlapping();
+
+// Poster månedlig rente på lånekontoer med effektiv rente satt (natt til den 1.).
+Schedule::command('loans:post-interest')->monthlyOn(1, '00:10')->withoutOverlapping();

@@ -7,6 +7,7 @@ use App\Http\Controllers\BudgetController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CategoryGroupController;
 use App\Http\Controllers\GoalController;
+use App\Http\Controllers\LoanController;
 use App\Http\Controllers\ReconciliationController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RuleController;
@@ -34,6 +35,7 @@ Route::prefix('api')->group(function () {
 
         Route::apiResource('accounts', AccountController::class);
         Route::post('accounts/{account}/reconcile', [ReconciliationController::class, 'store']);
+        Route::get('accounts/{account}/loan-projection', [LoanController::class, 'projection']);
 
         Route::apiResource('scheduled-transactions', ScheduledTransactionController::class)
             ->only(['index', 'store', 'update', 'destroy']);

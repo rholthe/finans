@@ -8,12 +8,26 @@ export interface Account {
     currency: string;
     closed: boolean;
     note: string | null;
+    interest_rate: number | null; // effektiv årsrente (kun lånekontoer)
     balance: number;
     cleared_balance: number;
     last_reconciled_at: string | null;
     uncategorized_count: number; // transaksjoner som mangler aktiv kategorisering
     bank_synced: boolean; // koblet til banksynk (overføringsregler kan ikke peke hit)
     bank_balance?: BankBalance | null; // bankens egen saldo fra siste synk (kun på kontodetalj)
+}
+
+/** Nedbetalingsprojeksjon for en lånekonto. */
+export interface LoanProjection {
+    balance: number; // nåværende saldo (negativ = gjeld)
+    interest_rate: number | null; // effektiv årsrente
+    monthly_rate: number; // utledet månedsrente
+    avg_payment: number; // snittlig månedlig innbetaling (basis)
+    basis_months: number; // 3 | 6 | 12
+    payoff_month: string | null; // YYYY-MM, null = ikke nedbetalbar
+    months_to_payoff: number | null;
+    total_interest: number; // gjenstående renter fram til nedbetalt
+    series: { month: string; balance: number }[];
 }
 
 /** Bankens egen saldo fra siste synk – mot appens klarerte/totale beløp. */

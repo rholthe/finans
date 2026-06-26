@@ -32,6 +32,8 @@ class AccountResource extends JsonResource
             'currency' => $this->currency,
             'closed' => $this->closed,
             'note' => $this->note,
+            // Effektiv årsrente (kun lånekontoer); null = ingen renteberegning.
+            'interest_rate' => $this->interest_rate !== null ? (float) $this->interest_rate : null,
             'balance' => round((float) $balance, 2),
             'cleared_balance' => round((float) $clearedBalance, 2),
             'last_reconciled_at' => $this->reconciliations()->max('reconciled_at'),

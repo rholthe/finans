@@ -13,6 +13,7 @@ import type {
     Goal,
     GoalType,
     Institution,
+    LoanProjection,
     AgeOfMoneyReport,
     CategoryTrendReport,
     IncomeExpenseReport,
@@ -89,8 +90,27 @@ export async function createAccount(payload: NewAccount): Promise<Account> {
     return res.data.data;
 }
 
+export async function updateAccount(
+    id: number,
+    payload: Partial<{ name: string; note: string | null; closed: boolean; interest_rate: number | null }>,
+): Promise<Account> {
+    const res = await api.put<Wrapped<Account>>(`/accounts/${id}`, payload);
+    return res.data.data;
+}
+
 export async function deleteAccount(id: number): Promise<void> {
     await api.delete(`/accounts/${id}`);
+}
+
+/** Nedbetalingsprojeksjon for en lånekonto (rente + snittinnbetaling 3/6/12 mnd). */
+export async function getLoanProjection(
+    id: number,
+    basis: 3 | 6 | 12,
+): Promise<LoanProjection> {
+    const res = await api.get<LoanProjection>(`/accounts/${id}/loan-projection`, {
+        params: { basis },
+    });
+    return res.data;
 }
 
 /** Avstem en konto mot oppgitt faktisk banksaldo. Lager justering ved avvik. */

@@ -91,6 +91,8 @@ class AccountController extends Controller
             'on_budget' => ['sometimes', 'boolean'],
             'closed' => ['sometimes', 'boolean'],
             'note' => ['nullable', 'string'],
+            // Effektiv årsrente i prosent (kun lånekontoer). Null nullstiller den.
+            'interest_rate' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:100'],
         ]);
 
         $account->update($validated);
