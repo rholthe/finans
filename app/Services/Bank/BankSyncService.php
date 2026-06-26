@@ -91,6 +91,8 @@ class BankSyncService
             foreach ($connections as $connection) {
                 $this->syncConnection($connection, $dateFrom, $seen);
             }
+
+            $this->reportBalanceMismatches();
         } catch (Throwable $e) {
             $criticalError = $e;
             $this->line('error', __('Kritisk feil under synk: :error', ['error' => $e->getMessage()]));
@@ -364,6 +366,55 @@ class BankSyncService
             'balance_available' => $balance->available,
             'balance_synced_at' => now(),
         ]);
+    }
+
+    /**
+     * Sammenlign app-total (sum av alle transaksjoner, inkl. reserverte) med
+     * bankens saldo inkl. reservert for hver banksynket konto, og legg
+     * saldoavvik som rapportlinjer. Et avvik markerer IKKE synken som feilet –
+     * det er kun et varsel (typisk reserverte poster som ennå ikke er hentet,
+     * eller manuelle rader som ikke matcher banken).
+     */
+    private function reportBalanceMismatches(): void
+    {
+        $accounts = Account::query()
+            ->whereHas('bankAccounts')
+            ->with('bankAccounts')
+            ->withSum('transactions', 'amount')
+            ->get();
+
+        $mismatches = [];
+
+        foreach ($accounts as $account) {
+            $appTotal = round((float) ($account->transactions_sum_amount ?? 0), 2);
+            $diff = $account->bankBalanceMismatch($appTotal);
+
+            if ($diff === null) {
+                continue;
+            }
+
+            $mismatches[] = __(':name: app :app vs. bank :bank (avvik :diff).', [
+                'name' => $account->name,
+                'app' => $this->money($appTotal),
+                'bank' => $this->money((float) $account->bankAvailableBalance()),
+                'diff' => $this->money($diff),
+            ]);
+        }
+
+        if ($mismatches === []) {
+            return;
+        }
+
+        $this->line('header', __('Saldoavvik (app vs. bank inkl. reservert)'));
+        foreach ($mismatches as $message) {
+            $this->line('warn', $message);
+        }
+    }
+
+    /** Formater et beløp på norsk for rapport-/e-posttekst, f.eks. «1 234,56 kr». */
+    private function money(float $amount): string
+    {
+        return number_format($amount, 2, ',', ' ').' kr';
     }
 
     private function storeRateLimit(BankDataProvider $provider, BankAccount $bankAccount): void

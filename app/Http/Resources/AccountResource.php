@@ -62,7 +62,7 @@ class AccountResource extends JsonResource
 
         return [
             'booked' => round((float) $synced->sum('balance_booked'), 2),
-            'available' => round((float) $synced->sum('balance_available'), 2),
+            'available' => $this->bankAvailableBalance(),
             'synced_at' => $synced->max('balance_synced_at')?->toISOString(),
         ];
     }

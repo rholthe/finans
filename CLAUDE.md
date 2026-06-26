@@ -154,6 +154,12 @@ Banking for prod-app-godkjenning.
   til transaksjonene, så en feil her logges som advarsel uten å feile synken. `AccountResource` eksponerer
   `bank_balance` (aggregert over koblede bankkontoer, kun når `bankAccounts` er lastet = kontodetalj), vist
   i heroen mot appens egne **klarert** og **totalt** så bankens tall er tydelig adskilt fra appens.
+  **Saldoavvik-varsel:** app-total (sum av alle transaksjoner, inkl. reserverte) sammenlignes med bankens
+  saldo **inkl. reservert** (`Account::bankBalanceMismatch()`; aggregert via `bankAvailableBalance()` –
+  null når banken ikke oppgir tilgjengelig, så vi ikke flagger falskt). Ved nøyaktig mismatch (terskel
+  0,005 fanger kun flyttall-støy): et lite amber-varsel i kontodetalj-heroen, og en «Saldoavvik»-seksjon
+  i den nattlige synk-e-posten (`BankSyncService::reportBalanceMismatches()` legger rapportlinjer etter
+  synk-løkka – kun et varsel, markerer **ikke** synken som feilet).
 - **Kredittkort = vanlig budsjettkonto som kan ha negativ saldo.** Ingen egen
   betalingskategori. Et kjøp på kortet er et helt vanlig kategorisert forbruk (trekker
   kategoriens `available`, ikke RTA), og gjelda reduserer «penger på konto». Kortet betales

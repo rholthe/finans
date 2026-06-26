@@ -295,6 +295,48 @@ class BankSyncTest extends TestCase
         $this->assertNull($bankAccount->refresh()->balance_booked);
     }
 
+    public function test_saldoavvik_varsles_i_rapporten_uten_aa_feile_synken(): void
+    {
+        $bankAccount = $this->linkedAccount();
+        // App-total blir -100; banken oppgir 50 inkl. reservert → avvik 150.
+        $this->provider->transactions['acc1'] = [$this->tx('b1', -100)];
+        $this->provider->balances['acc1'] = new BankBalance(booked: 50.0, available: 50.0, currency: 'NOK');
+
+        $event = $this->sync();
+
+        // Avvik er kun et varsel – synken er fortsatt vellykket.
+        $this->assertSame(SyncEvent::STATUS_NEW, $event->status);
+
+        $report = collect($event->report);
+        $this->assertTrue(
+            $report->contains(fn (array $line): bool => $line['status'] === 'header'
+                && str_contains($line['message'], 'Saldoavvik')),
+            'Rapporten skal ha en Saldoavvik-header.',
+        );
+        $this->assertTrue(
+            $report->contains(fn (array $line): bool => $line['status'] === 'warn'
+                && str_contains($line['message'], $bankAccount->account->name)),
+            'Rapporten skal ha en varsellinje for kontoen med avvik.',
+        );
+    }
+
+    public function test_ingen_saldoavvik_naar_app_og_bank_matcher(): void
+    {
+        $bankAccount = $this->linkedAccount();
+        // App-total blir -100; banken oppgir nøyaktig -100 → ingen avvik.
+        $this->provider->transactions['acc1'] = [$this->tx('b1', -100)];
+        $this->provider->balances['acc1'] = new BankBalance(booked: -100.0, available: -100.0, currency: 'NOK');
+
+        $event = $this->sync();
+
+        $this->assertFalse(
+            collect($event->report)->contains(
+                fn (array $line): bool => str_contains($line['message'], 'Saldoavvik'),
+            ),
+            'Ingen saldoavvik skal rapporteres når app og bank matcher.',
+        );
+    }
+
     public function test_rate_limit_429_markerer_konto_ikke_synkbar(): void
     {
         $bankAccount = $this->linkedAccount();

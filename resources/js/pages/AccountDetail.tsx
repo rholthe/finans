@@ -37,6 +37,10 @@ import {
 
 const PER_PAGE_OPTIONS = [25, 50, 100, 200, 500];
 
+// Avvik mellom app-total og bankens saldo (inkl. reservert) varsles ved nøyaktig
+// mismatch – terskelen fanger kun flyttall-støy, ikke reelle øre-avvik.
+const BALANCE_MISMATCH_THRESHOLD = 0.005;
+
 const ACCOUNT_TYPE_ICON: Record<AccountType, string> = {
     cash: '💵',
     bank: '🏦',
@@ -50,6 +54,16 @@ function accountAccent(onBudget: boolean) {
     return onBudget
         ? { badge: 'bg-emerald-100 text-emerald-700', gradient: 'from-emerald-50 via-white to-sky-50' }
         : { badge: 'bg-sky-100 text-sky-700', gradient: 'from-sky-50 via-white to-white' };
+}
+
+// Liten etikett/verdi-celle for saldotallene nederst i heroen.
+function HeroStat({ label, value }: { label: string; value: string }) {
+    return (
+        <div>
+            <dt className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">{label}</dt>
+            <dd className="text-sm font-medium tabular-nums text-neutral-700">{value}</dd>
+        </div>
+    );
 }
 
 export default function AccountDetail() {
@@ -205,6 +219,12 @@ export default function AccountDetail() {
 
             {(() => {
                 const accent = accountAccent(account.on_budget);
+                // App-total mot bankens saldo inkl. reservert (begge inneholder reserverte).
+                const bankAvailable = account.bank_balance?.available ?? null;
+                const mismatch =
+                    bankAvailable != null && Math.abs(account.balance - bankAvailable) >= BALANCE_MISMATCH_THRESHOLD
+                        ? account.balance - bankAvailable
+                        : null;
                 return (
                     <div
                         className={`mt-2 rounded-2xl bg-gradient-to-br ${accent.gradient} p-6 shadow-sm ring-1 ring-neutral-200`}
@@ -263,36 +283,45 @@ export default function AccountDetail() {
                                 </button>
                             </div>
                         </div>
-                        <div className="mt-3 space-y-1 text-xs text-neutral-500">
-                            <p>
-                                App – klarert:{' '}
-                                <span className="font-medium tabular-nums">{formatNok(account.cleared_balance)}</span>
-                                {account.last_reconciled_at &&
-                                    ` · sist avstemt ${formatDate(account.last_reconciled_at)}`}
-                            </p>
-                            {account.bank_balance && (
-                                <p className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                                    <span>
-                                        Banksaldo (bokført):{' '}
-                                        <span className="font-medium tabular-nums text-neutral-700">
-                                            {account.bank_balance.booked != null
-                                                ? formatNok(account.bank_balance.booked)
-                                                : '–'}
-                                        </span>
-                                    </span>
-                                    <span>
-                                        Banksaldo (inkl. reservert):{' '}
-                                        <span className="font-medium tabular-nums text-neutral-700">
-                                            {account.bank_balance.available != null
-                                                ? formatNok(account.bank_balance.available)
-                                                : '–'}
-                                        </span>
-                                    </span>
-                                    {account.bank_balance.synced_at && (
-                                        <span className="text-neutral-400">
-                                            oppdatert {formatDateTime(account.bank_balance.synced_at)}
-                                        </span>
-                                    )}
+                        <div className="mt-4 border-t border-neutral-200/70 pt-3">
+                            <dl className="flex flex-wrap gap-x-8 gap-y-2">
+                                <HeroStat label="App – klarert" value={formatNok(account.cleared_balance)} />
+                                {account.bank_balance && (
+                                    <>
+                                        <HeroStat
+                                            label="Bank – bokført"
+                                            value={
+                                                account.bank_balance.booked != null
+                                                    ? formatNok(account.bank_balance.booked)
+                                                    : '–'
+                                            }
+                                        />
+                                        <HeroStat
+                                            label="Bank – inkl. reservert"
+                                            value={
+                                                account.bank_balance.available != null
+                                                    ? formatNok(account.bank_balance.available)
+                                                    : '–'
+                                            }
+                                        />
+                                    </>
+                                )}
+                            </dl>
+
+                            {mismatch != null && (
+                                <p className="mt-3 flex w-fit items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 ring-1 ring-amber-100">
+                                    <span aria-hidden>⚠️</span>
+                                    Avvik mot bank: {formatNok(mismatch)}
+                                </p>
+                            )}
+
+                            {(account.last_reconciled_at || account.bank_balance?.synced_at) && (
+                                <p className="mt-2 text-[11px] text-neutral-400">
+                                    {account.last_reconciled_at &&
+                                        `Sist avstemt ${formatDate(account.last_reconciled_at)}`}
+                                    {account.last_reconciled_at && account.bank_balance?.synced_at && ' · '}
+                                    {account.bank_balance?.synced_at &&
+                                        `banksaldo oppdatert ${formatDateTime(account.bank_balance.synced_at)}`}
                                 </p>
                             )}
                         </div>
