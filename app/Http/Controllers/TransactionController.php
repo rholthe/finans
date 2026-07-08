@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Resources\TransactionResource;
 use App\Models\Account;
+use App\Models\IgnoredBankTransaction;
 use App\Models\Transaction;
 use App\Services\Rules\ReapplyRules;
 use Illuminate\Http\JsonResponse;
@@ -223,11 +224,32 @@ class TransactionController extends Controller
     {
         // En overføring slettes som et hele: fjern begge ben.
         DB::transaction(function () use ($transaction): void {
-            $transaction->transfer?->delete();
+            $this->tombstoneBankImport($transaction);
+            if ($transaction->transfer !== null) {
+                $this->tombstoneBankImport($transaction->transfer);
+                $transaction->transfer->delete();
+            }
             $transaction->delete();
         });
 
         return response()->json(status: 204);
+    }
+
+    /**
+     * Marker en bokført bankimport som «ikke re-importer» før den slettes, så
+     * neste synk ikke drar den inn igjen. Kun bokførte rader med external_id:
+     * reserverte churner og slettes uansett ved hver synk, så de tombstones ikke.
+     */
+    private function tombstoneBankImport(Transaction $transaction): void
+    {
+        if ($transaction->external_id === null || $transaction->pending) {
+            return;
+        }
+
+        IgnoredBankTransaction::firstOrCreate([
+            'account_id' => $transaction->account_id,
+            'external_id' => $transaction->external_id,
+        ]);
     }
 
     /**

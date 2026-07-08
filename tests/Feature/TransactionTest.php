@@ -120,6 +120,44 @@ class TransactionTest extends TestCase
         $this->assertDatabaseMissing('transactions', ['id' => $tx->id]);
     }
 
+    public function test_sletting_av_bankimport_lager_tombstone(): void
+    {
+        $account = Account::factory()->create();
+        $tx = Transaction::factory()->create([
+            'account_id' => $account->id,
+            'external_id' => 'ext-1',
+            'pending' => false,
+        ]);
+
+        $this->deleteJson("/api/transactions/{$tx->id}")->assertNoContent();
+
+        $this->assertDatabaseHas('ignored_bank_transactions', [
+            'account_id' => $account->id,
+            'external_id' => 'ext-1',
+        ]);
+    }
+
+    public function test_sletting_av_reservert_bankrad_lager_ingen_tombstone(): void
+    {
+        $tx = Transaction::factory()->create([
+            'external_id' => 'ext-pend',
+            'pending' => true,
+        ]);
+
+        $this->deleteJson("/api/transactions/{$tx->id}")->assertNoContent();
+
+        $this->assertDatabaseMissing('ignored_bank_transactions', ['external_id' => 'ext-pend']);
+    }
+
+    public function test_sletting_av_manuell_rad_lager_ingen_tombstone(): void
+    {
+        $tx = Transaction::factory()->create(['external_id' => null]);
+
+        $this->deleteJson("/api/transactions/{$tx->id}")->assertNoContent();
+
+        $this->assertDatabaseCount('ignored_bank_transactions', 0);
+    }
+
     public function test_krever_belop_og_dato(): void
     {
         $account = Account::factory()->create();

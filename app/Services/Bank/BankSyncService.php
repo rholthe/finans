@@ -7,6 +7,7 @@ use App\Mail\SyncReportMail;
 use App\Models\Account;
 use App\Models\BankAccount;
 use App\Models\BankConnection;
+use App\Models\IgnoredBankTransaction;
 use App\Models\SyncEvent;
 use App\Models\Transaction;
 use App\Services\Rules\RuleEngine;
@@ -85,6 +86,14 @@ class BankSyncService
                 ->whereNotNull('external_id')
                 ->get(['account_id', 'external_id'])
                 ->each(function (Transaction $t) use (&$seen): void {
+                    $seen[$t->account_id.':'.$t->external_id] = 1;
+                });
+
+            // Tombstones for slettede bankimporter teller også som «sett», så en
+            // rad brukeren bevisst slettet ikke dras inn igjen ved neste synk.
+            IgnoredBankTransaction::query()
+                ->get(['account_id', 'external_id'])
+                ->each(function (IgnoredBankTransaction $t) use (&$seen): void {
                     $seen[$t->account_id.':'.$t->external_id] = 1;
                 });
 

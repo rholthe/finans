@@ -197,6 +197,15 @@ Banking for prod-app-godkjenning.
   setter derfor payee til det strukturerte navnet når det finnes, ellers navnet fra den linja; all
   whitespace-padding kollapses til enkle mellomrom så lengdegrensen ikke spises opp. `description`/
   `memo` (regelmotorens matchegrunnlag) beholder fortsatt all tekst.
+- **Slettede bankimporter re-importeres ikke (tombstones):** dedup bygger `$seen`-settet fra
+  eksisterende rader, så en slettet rad ville ellers komme inn igjen ved neste synk. Sletting av en
+  **bokført** bankrad (`external_id` satt · ikke `pending`) skriver derfor en tombstone i
+  `ignored_bank_transactions` (`account_id`+`external_id`, unik, idempotent `firstOrCreate` i
+  `TransactionController::tombstoneBankImport`); overføringer tombstoner begge ben. Synken seeder
+  `$seen` fra både transaksjoner **og** tombstones. Reserverte/manuelle rader tombstones **ikke**
+  (reserverte churner og slettes uansett hver synk). Egen tabell – ikke SoftDeletes – så slettede rader
+  er virkelig borte og de rå `DB::table`/`selectRaw`-aggregatene (budsjett/rapport) forblir korrekte
+  uten scope-endringer. Tombstones er permanente (ingen «tillat re-import» i dag).
 - **Banksynk:** deduplisering per `account_id:external_id` (samme external_id kan gjelde flere
   kontoer). Rapport-e-post sendes ved både suksess og feil til `AppSettings::reportEmail()` –
   innstillingen `report_email` (satt under Innstillinger) vinner, med `BANK_SYNC_REPORT_EMAIL` i

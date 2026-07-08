@@ -7,6 +7,7 @@ use App\Models\Account;
 use App\Models\BankAccount;
 use App\Models\BankConnection;
 use App\Models\Category;
+use App\Models\IgnoredBankTransaction;
 use App\Models\Rule;
 use App\Models\SyncEvent;
 use App\Models\Transaction;
@@ -169,6 +170,22 @@ class BankSyncTest extends TestCase
 
         $this->assertSame(1, $event->imported_count); // kun tx-2
         $this->assertDatabaseCount('transactions', 2);
+    }
+
+    public function test_tombstonet_bankpost_importeres_ikke_paa_nytt(): void
+    {
+        $bankAccount = $this->linkedAccount();
+        IgnoredBankTransaction::create([
+            'account_id' => $bankAccount->account_id,
+            'external_id' => 'tx-1',
+        ]);
+        $this->provider->transactions['acc1'] = [$this->tx('tx-1', -300), $this->tx('tx-2', 500)];
+
+        $event = $this->sync();
+
+        $this->assertSame(1, $event->imported_count); // kun tx-2, tx-1 er tombstonet
+        $this->assertDatabaseMissing('transactions', ['external_id' => 'tx-1']);
+        $this->assertDatabaseHas('transactions', ['external_id' => 'tx-2']);
     }
 
     public function test_reservert_lagres_som_pending_og_ikke_klarert(): void
