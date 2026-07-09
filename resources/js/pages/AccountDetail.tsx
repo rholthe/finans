@@ -492,16 +492,18 @@ export default function AccountDetail() {
             {notice && <p className="mt-3 rounded-lg bg-neutral-100 px-4 py-2 text-sm text-neutral-700">{notice}</p>}
 
             <div className="mt-3 overflow-x-auto rounded-xl border border-neutral-200 bg-white">
-                <table className="w-full text-sm">
+                {/* table-fixed: tabellen kan aldri bli bredere enn containeren –
+                    tekstkolonnene (mottaker/overføring/kategori) deler resten og trunkeres. */}
+                <table className="w-full table-fixed text-sm">
                     <thead className="bg-neutral-50 text-left text-xs uppercase tracking-wide text-neutral-500">
                         <tr>
-                            <th className="px-3 py-2 font-medium">Dato</th>
+                            <th className="w-28 px-3 py-2 font-medium">Dato</th>
                             <th className="px-3 py-2 font-medium">Mottaker</th>
                             <th className="px-3 py-2 font-medium">Overføring</th>
                             <th className="px-3 py-2 font-medium">Kategori</th>
-                            <th className="px-3 py-2 text-center font-medium">Klarert</th>
-                            <th className="px-3 py-2 text-right font-medium">Beløp</th>
-                            <th className="px-3 py-2"></th>
+                            <th className="w-24 px-3 py-2 text-center font-medium">Klarert</th>
+                            <th className="w-36 px-3 py-2 text-right font-medium">Beløp</th>
+                            <th className="w-48 px-3 py-2"></th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-neutral-100">
@@ -537,7 +539,7 @@ export default function AccountDetail() {
                                             <span className="flex items-center gap-1.5">
                                                 <span
                                                     title={tx.payee ?? undefined}
-                                                    className="max-w-[14rem] truncate"
+                                                    className="min-w-0 truncate"
                                                 >
                                                     {tx.payee ?? '—'}
                                                 </span>
@@ -574,7 +576,7 @@ export default function AccountDetail() {
                                             {tx.transfer_id ? (
                                                 <span
                                                     title={tx.transfer_account ?? 'Overføring'}
-                                                    className="inline-block max-w-[10rem] truncate align-bottom italic text-neutral-500"
+                                                    className="inline-block max-w-full truncate align-bottom italic text-neutral-500"
                                                 >
                                                     ⇄ {tx.transfer_account ?? 'Overføring'}
                                                 </span>
@@ -740,7 +742,7 @@ function InlineCategorySelect({
             value={value}
             disabled={busy}
             onChange={(e) => handle(e.target.value)}
-            className={`max-w-[12rem] rounded border bg-transparent px-1.5 py-1 text-sm focus:border-neutral-900 focus:outline-none disabled:opacity-50 ${
+            className={`max-w-full rounded border bg-transparent px-1.5 py-1 text-sm focus:border-neutral-900 focus:outline-none disabled:opacity-50 ${
                 value === ''
                     ? 'border-neutral-200 italic text-neutral-400'
                     : 'border-transparent text-neutral-700 hover:border-neutral-300'
