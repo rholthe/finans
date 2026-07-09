@@ -554,22 +554,6 @@ export default function AccountDetail() {
                                                 {tx.locked && (
                                                     <span title="Låst – beskyttet mot regler">🔒</span>
                                                 )}
-                                                {tx.pending && (
-                                                    <span
-                                                        title="Reservert – ikke bokført i banken ennå"
-                                                        className="rounded bg-amber-50 px-1 py-0.5 text-[10px] font-medium uppercase text-amber-600"
-                                                    >
-                                                        reservert
-                                                    </span>
-                                                )}
-                                                {tx.reconciled_at && (
-                                                    <span
-                                                        title="Avstemt"
-                                                        className="rounded bg-green-50 px-1 py-0.5 text-[10px] font-medium uppercase text-green-600"
-                                                    >
-                                                        avstemt
-                                                    </span>
-                                                )}
                                             </span>
                                         </td>
                                         <td className="px-3 py-2 text-neutral-500">
@@ -619,13 +603,28 @@ export default function AccountDetail() {
                                             )}
                                         </td>
                                         <td className="px-3 py-2 text-center">
+                                            {/* Reservert/avstemt vises her (ikke som badges ved payee):
+                                                begge er klareringstilstander – reservert = venter på
+                                                bokføring, avstemt = klarert og låst mot banksaldo. */}
                                             <button
                                                 onClick={() => toggleCleared(tx)}
-                                                title={tx.cleared ? 'Klarert' : 'Ikke klarert'}
+                                                title={
+                                                    tx.reconciled_at && tx.cleared
+                                                        ? 'Klarert og avstemt'
+                                                        : tx.cleared
+                                                          ? 'Klarert'
+                                                          : tx.pending
+                                                            ? 'Reservert – ikke bokført i banken ennå'
+                                                            : 'Ikke klarert'
+                                                }
                                                 className={`h-5 w-5 rounded-full border text-xs ${
-                                                    tx.cleared
-                                                        ? 'border-green-600 bg-green-600 text-white'
-                                                        : 'border-neutral-300 text-transparent'
+                                                    tx.reconciled_at && tx.cleared
+                                                        ? 'border-green-600 bg-green-600 text-white ring-2 ring-green-200'
+                                                        : tx.cleared
+                                                          ? 'border-green-600 bg-green-600 text-white'
+                                                          : tx.pending
+                                                            ? 'border-dashed border-amber-400 text-transparent'
+                                                            : 'border-neutral-300 text-transparent'
                                                 }`}
                                             >
                                                 ✓
