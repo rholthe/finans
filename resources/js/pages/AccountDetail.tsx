@@ -1638,7 +1638,9 @@ function EditTransactionForm({
     const [amount, setAmount] = useState(String(Math.abs(tx.amount)));
     // 'rta' = Klar til å fordele, '' = ukategorisert, ellers kategori-id.
     const [placement, setPlacement] = useState(tx.rta ? 'rta' : String(tx.category_id ?? ''));
-    const [mode, setMode] = useState<'single' | 'split'>(tx.is_split ? 'split' : 'single');
+    // Overføringsben åpnes alltid i splitt-modus – 'single'-stien ville sendt
+    // date/amount/payee som backend avviser for overføringer (422).
+    const [mode, setMode] = useState<'single' | 'split'>(isTransfer || tx.is_split ? 'split' : 'single');
     const [lines, setLines] = useState<SplitLine[]>(
         tx.is_split && tx.splits?.length
             ? tx.splits.map((s) => ({ category_id: String(s.category_id), amount: String(Math.abs(s.amount)) }))
