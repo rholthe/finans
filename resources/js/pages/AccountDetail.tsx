@@ -669,7 +669,8 @@ export default function AccountDetail() {
                                                     + regel
                                                 </button>
                                             )}
-                                            {!tx.transfer_id && (
+                                            {/* Reserverte rader redigeres ikke – de byttes ut ved neste synk. */}
+                                            {!tx.transfer_id && !tx.pending && (
                                                 <button
                                                     onClick={() => startEdit(tx)}
                                                     className="ml-3 text-xs text-neutral-400 hover:text-neutral-900"
