@@ -495,13 +495,13 @@ export default function AccountDetail() {
                 <table className="w-full text-sm">
                     <thead className="bg-neutral-50 text-left text-xs uppercase tracking-wide text-neutral-500">
                         <tr>
-                            <th className="px-4 py-2 font-medium">Dato</th>
-                            <th className="px-4 py-2 font-medium">Mottaker</th>
-                            <th className="px-4 py-2 font-medium">Overføring</th>
-                            <th className="px-4 py-2 font-medium">Kategori</th>
-                            <th className="px-4 py-2 text-center font-medium">Klarert</th>
-                            <th className="px-4 py-2 text-right font-medium">Beløp</th>
-                            <th className="px-4 py-2"></th>
+                            <th className="px-3 py-2 font-medium">Dato</th>
+                            <th className="px-3 py-2 font-medium">Mottaker</th>
+                            <th className="px-3 py-2 font-medium">Overføring</th>
+                            <th className="px-3 py-2 font-medium">Kategori</th>
+                            <th className="px-3 py-2 text-center font-medium">Klarert</th>
+                            <th className="px-3 py-2 text-right font-medium">Beløp</th>
+                            <th className="px-3 py-2"></th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-neutral-100">
@@ -530,12 +530,17 @@ export default function AccountDetail() {
                                     </tr>
                                 ) : (
                                     <tr key={tx.id} className="hover:bg-neutral-50">
-                                        <td className="whitespace-nowrap px-4 py-2 text-neutral-600">
+                                        <td className="whitespace-nowrap px-3 py-2 text-neutral-600">
                                             {formatDate(tx.date)}
                                         </td>
-                                        <td className="px-4 py-2">
+                                        <td className="px-3 py-2">
                                             <span className="flex items-center gap-1.5">
-                                                {tx.payee ?? '—'}
+                                                <span
+                                                    title={tx.payee ?? undefined}
+                                                    className="max-w-[14rem] truncate"
+                                                >
+                                                    {tx.payee ?? '—'}
+                                                </span>
                                                 {tx.rule_id && (
                                                     <span
                                                         title="Satt automatisk av en regel"
@@ -565,7 +570,7 @@ export default function AccountDetail() {
                                                 )}
                                             </span>
                                         </td>
-                                        <td className="px-4 py-2 text-neutral-500">
+                                        <td className="px-3 py-2 text-neutral-500">
                                             {tx.transfer_id ? (
                                                 <span
                                                     title={tx.transfer_account ?? 'Overføring'}
@@ -577,7 +582,7 @@ export default function AccountDetail() {
                                                 ''
                                             )}
                                         </td>
-                                        <td className="px-4 py-2 text-neutral-500">
+                                        <td className="px-3 py-2 text-neutral-500">
                                             {!account.on_budget ? (
                                                 <span className="italic text-neutral-400">ikke behov</span>
                                             ) : tx.is_split ? (
@@ -611,7 +616,7 @@ export default function AccountDetail() {
                                                 />
                                             )}
                                         </td>
-                                        <td className="px-4 py-2 text-center">
+                                        <td className="px-3 py-2 text-center">
                                             <button
                                                 onClick={() => toggleCleared(tx)}
                                                 title={tx.cleared ? 'Klarert' : 'Ikke klarert'}
@@ -625,13 +630,13 @@ export default function AccountDetail() {
                                             </button>
                                         </td>
                                         <td
-                                            className={`whitespace-nowrap px-4 py-2 text-right font-medium tabular-nums ${
+                                            className={`whitespace-nowrap px-3 py-2 text-right font-medium tabular-nums ${
                                                 tx.amount < 0 ? 'text-red-600' : 'text-green-700'
                                             }`}
                                         >
                                             {formatNok(tx.amount)}
                                         </td>
-                                        <td className="whitespace-nowrap px-4 py-2 text-right">
+                                        <td className="whitespace-nowrap px-3 py-2 text-right">
                                             {/* Overføringer kan ikke redigeres eller regelstyres – kun slettes. */}
                                             {!tx.transfer_id && !tx.rule_id && tx.bank_description && (
                                                 <button
