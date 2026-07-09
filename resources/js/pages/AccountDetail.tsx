@@ -491,7 +491,7 @@ export default function AccountDetail() {
 
             {notice && <p className="mt-3 rounded-lg bg-neutral-100 px-4 py-2 text-sm text-neutral-700">{notice}</p>}
 
-            <div className="mt-3 overflow-hidden rounded-xl border border-neutral-200 bg-white">
+            <div className="mt-3 overflow-x-auto rounded-xl border border-neutral-200 bg-white">
                 <table className="w-full text-sm">
                     <thead className="bg-neutral-50 text-left text-xs uppercase tracking-wide text-neutral-500">
                         <tr>
@@ -567,7 +567,10 @@ export default function AccountDetail() {
                                         </td>
                                         <td className="px-4 py-2 text-neutral-500">
                                             {tx.transfer_id ? (
-                                                <span className="whitespace-nowrap italic text-neutral-500">
+                                                <span
+                                                    title={tx.transfer_account ?? 'Overføring'}
+                                                    className="inline-block max-w-[10rem] truncate align-bottom italic text-neutral-500"
+                                                >
                                                     ⇄ {tx.transfer_account ?? 'Overføring'}
                                                 </span>
                                             ) : (
