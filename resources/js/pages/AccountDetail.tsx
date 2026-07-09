@@ -593,6 +593,14 @@ export default function AccountDetail() {
                                                 ) : (
                                                     <span className="italic text-neutral-400">ikke behov</span>
                                                 )
+                                            ) : tx.pending ? (
+                                                // Reserverte rader byttes ut ved neste synk og kategoriseres
+                                                // av reglene når de bokføres – ingen manuell kategorisering.
+                                                tx.category_id ? (
+                                                    (categoryName.get(tx.category_id) ?? '—')
+                                                ) : (
+                                                    <span className="italic text-amber-600">reservert</span>
+                                                )
                                             ) : (
                                                 // Vanlig transaksjon: sett kategori/RTA/ukategorisert direkte.
                                                 <InlineCategorySelect
