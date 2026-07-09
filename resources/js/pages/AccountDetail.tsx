@@ -597,7 +597,9 @@ export default function AccountDetail() {
                                                 // Reserverte rader byttes ut ved neste synk og kategoriseres
                                                 // av reglene når de bokføres – ingen manuell kategorisering.
                                                 tx.category_id ? (
-                                                    (categoryName.get(tx.category_id) ?? '—')
+                                                    <span className="text-amber-600">
+                                                        {categoryName.get(tx.category_id) ?? '—'}
+                                                    </span>
                                                 ) : (
                                                     <span className="italic text-amber-600">reservert</span>
                                                 )
@@ -763,7 +765,7 @@ function InlineCategorySelect({
             value={value}
             disabled={busy}
             onChange={(e) => handle(e.target.value)}
-            className={`max-w-full rounded border bg-transparent px-1.5 py-1 text-sm focus:border-neutral-900 focus:outline-none disabled:opacity-50 ${
+            className={`-ml-[7px] max-w-full rounded border bg-transparent px-1.5 py-1 text-sm focus:border-neutral-900 focus:outline-none disabled:opacity-50 ${
                 value === ''
                     ? 'border-neutral-200 italic text-neutral-400'
                     : 'border-transparent text-neutral-700 hover:border-neutral-300'
