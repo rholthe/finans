@@ -605,29 +605,42 @@ export default function AccountDetail() {
                                         <td className="px-3 py-2 text-center">
                                             {/* Reservert/avstemt vises her (ikke som badges ved payee):
                                                 begge er klareringstilstander – reservert = venter på
-                                                bokføring, avstemt = klarert og låst mot banksaldo. */}
+                                                bokføring (kan ikke klareres, byttes ut ved neste synk),
+                                                avstemt = lås i stedet for hake. */}
                                             <button
                                                 onClick={() => toggleCleared(tx)}
+                                                disabled={tx.pending}
                                                 title={
                                                     tx.reconciled_at && tx.cleared
                                                         ? 'Klarert og avstemt'
                                                         : tx.cleared
                                                           ? 'Klarert'
                                                           : tx.pending
-                                                            ? 'Reservert – ikke bokført i banken ennå'
+                                                            ? 'Reservert – bokføres av banken før den kan klareres'
                                                             : 'Ikke klarert'
                                                 }
-                                                className={`h-5 w-5 rounded-full border text-xs ${
+                                                className={`inline-flex h-5 w-5 items-center justify-center rounded-full border text-xs ${
                                                     tx.reconciled_at && tx.cleared
-                                                        ? 'border-green-600 bg-green-600 text-white ring-2 ring-green-200'
+                                                        ? 'border-green-700 bg-green-700 text-white'
                                                         : tx.cleared
                                                           ? 'border-green-600 bg-green-600 text-white'
                                                           : tx.pending
-                                                            ? 'border-dashed border-amber-400 text-transparent'
+                                                            ? 'cursor-default border-dashed border-amber-400 text-transparent'
                                                             : 'border-neutral-300 text-transparent'
                                                 }`}
                                             >
-                                                ✓
+                                                {tx.reconciled_at && tx.cleared ? (
+                                                    <svg
+                                                        viewBox="0 0 24 24"
+                                                        fill="currentColor"
+                                                        aria-hidden="true"
+                                                        className="h-3 w-3"
+                                                    >
+                                                        <path d="M12 2a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5Zm-3 8V7a3 3 0 1 1 6 0v3H9Z" />
+                                                    </svg>
+                                                ) : (
+                                                    '✓'
+                                                )}
                                             </button>
                                         </td>
                                         <td

@@ -112,6 +112,15 @@ class TransactionController extends Controller
             }
         }
 
+        // Reserverte rader er ikke bokført ennå og byttes ut ved neste synk,
+        // så de kan ikke klareres (ville telle i avstemmingen og så forsvinne).
+        if ($transaction->pending && $request->boolean('cleared')) {
+            return response()->json(
+                ['message' => 'Reserverte transaksjoner kan ikke klareres – de bokføres av banken først.'],
+                422,
+            );
+        }
+
         $validated = $this->validatePayload($request, partial: true);
         $splitsProvided = array_key_exists('splits', $validated);
         $splits = $validated['splits'] ?? [];

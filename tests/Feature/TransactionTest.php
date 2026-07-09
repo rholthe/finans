@@ -82,6 +82,16 @@ class TransactionTest extends TestCase
             ->assertJsonPath('data.cleared', true);
     }
 
+    public function test_reservert_transaksjon_kan_ikke_klareres(): void
+    {
+        $tx = Transaction::factory()->create(['pending' => true, 'cleared' => false]);
+
+        $this->patchJson("/api/transactions/{$tx->id}", ['cleared' => true])
+            ->assertStatus(422);
+
+        $this->assertDatabaseHas('transactions', ['id' => $tx->id, 'cleared' => false]);
+    }
+
     public function test_inline_kategorisering_setter_kategori_rta_og_ukategorisert(): void
     {
         $account = Account::factory()->create(['on_budget' => true]);
