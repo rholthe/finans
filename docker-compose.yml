@@ -10,6 +10,7 @@ services:
     networks:
       - proxy-network
       - app-backend
+      - mailcow-network
 
   finans-worker:
     build: .
@@ -22,6 +23,7 @@ services:
       - ./storage-app:/var/www/html/storage/app
     networks:
       - app-backend
+      - mailcow-network
 
   finans-scheduler:
     build: .
@@ -34,6 +36,7 @@ services:
       - ./storage-app:/var/www/html/storage/app
     networks:
       - app-backend
+      - mailcow-network
 
 networks:
   proxy-network:
@@ -41,4 +44,7 @@ networks:
     external: true
   app-backend:
     name: app-backend
+    external: true
+  mailcow-network:
+    name: mailcowdockerized_mailcow-network
     external: true
