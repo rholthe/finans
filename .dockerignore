@@ -1,0 +1,13 @@
+node_modules
+vendor
+.git
+.env
+.env*
+storage/app/private
+storage/app/public
+storage/framework/cache
+storage/framework/sessions
+storage/framework/views
+storage/logs
+.idea
+.phpunit.result.cache

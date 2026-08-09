@@ -1,0 +1,44 @@
+services:
+  finans-web:
+    build: .
+    container_name: finans-web
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./storage-app:/var/www/html/storage/app
+    networks:
+      - proxy-network
+      - app-backend
+
+  finans-worker:
+    build: .
+    container_name: finans-worker
+    restart: unless-stopped
+    command: php artisan queue:work --tries=3 --max-time=3600 --sleep=3
+    env_file:
+      - .env
+    volumes:
+      - ./storage-app:/var/www/html/storage/app
+    networks:
+      - app-backend
+
+  finans-scheduler:
+    build: .
+    container_name: finans-scheduler
+    restart: unless-stopped
+    command: php artisan schedule:work
+    env_file:
+      - .env
+    volumes:
+      - ./storage-app:/var/www/html/storage/app
+    networks:
+      - app-backend
+
+networks:
+  proxy-network:
+    name: reverse-proxy_default
+    external: true
+  app-backend:
+    name: app-backend
+    external: true

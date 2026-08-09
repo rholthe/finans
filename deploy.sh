@@ -1,42 +1,31 @@
 #!/usr/bin/env bash
-#
-# Deploy-script for Finans (prod, f.eks. /var/www/finans).
-#
-# Kjøres som brukeren som eier koden – ingen sudo nødvendig:
-#   ./deploy.sh
-#
-# Kø-arbeideren resirkuleres med `queue:restart` (grasiøs: arbeideren
-# avslutter etter pågående jobb og Supervisor starter den på nytt).
-# Apache (mod_php) trenger ingen restart.
-
+# Deploy-script for finans.holthe.org på ny VPS (Docker-basert, 3 containere:
+# web/worker/scheduler bygget fra samme image).
+# Kjøres på serveren: ./deploy.sh
 set -euo pipefail
-
 cd "$(dirname "$0")"
-
-echo "==> Maintenance-modus på"
-php artisan down --render="errors::503" || true
-# Sørg for at appen alltid kommer opp igjen, også ved feil underveis.
-trap 'php artisan up || true' EXIT
 
 echo "==> Henter siste kode"
 git pull --ff-only
 
-echo "==> PHP-avhengigheter"
-composer install --no-dev --optimize-autoloader --no-interaction
+echo "==> Bygger nye images (web, worker, scheduler)"
+docker compose build
 
-echo "==> Bygger frontend"
-npm ci
-npm run build
+echo "==> Bytter til nye containere"
+docker compose up -d
+
+echo "==> Venter på at appen er oppe"
+sleep 3
 
 echo "==> Migrerer database"
-php artisan migrate --force
+docker exec finans-web php artisan migrate --force
 
 echo "==> Cacher config/ruter/views"
-php artisan config:cache
-php artisan route:cache
-php artisan view:cache
+docker exec finans-web php artisan config:cache
+docker exec finans-web php artisan route:cache
+docker exec finans-web php artisan view:cache
 
-echo "==> Resirkulerer kø-arbeider"
-php artisan queue:restart
+echo "==> Restarter alle tre containere slik at endringer tas i bruk"
+docker compose restart
 
 echo "==> Ferdig"
