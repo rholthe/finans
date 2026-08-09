@@ -12,6 +12,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Appen kjører bak Caddy (reverse proxy) i Docker - stol på X-Forwarded-*
+        // headere derfra slik at genererte URL-er/assets bruker riktig https-schema.
+        $middleware->trustProxies(at: '*');
+
         $middleware->alias([
             'auth.session' => Authenticated::class,
         ]);
