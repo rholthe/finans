@@ -200,6 +200,16 @@ Blade, utenfor login/SPA) kreves av Enable Banking for prod-app-godkjenning.
   med ny external_id (EB gir `transaction_id` ≠ `entry_reference`), så beholdt vi den låste reserverte
   raden ble den foreldreløs som duplikat. Reserverte er kortlevde og re-kategoriseres av reglene når de
   bokføres, så vi prioriterer å unngå duplikater.
+  **Kjent feil (DNB, ikke rettet):** DNB stempler *alle* reserverte (`status: PDNG`) med
+  `credit_debit_indicator: "CRDT"`, også rene kortkjøp, så `EnableBankingProvider::normalize()`
+  – som stoler på indikatoren – gir dem **positivt** fortegn. De strukturerte feltene er ellers
+  tomme på reserverte (`entry_reference`/`debtor_account` null, `creditor_account.iban` = kontoens
+  egen), så det finnes **ingen pålitelig retningskilde per transaksjon**; «kreditor = egen konto»
+  ville vært riktig også for en ekte innbetaling. Bokførte rader er korrekte, og den bokførte
+  versjonen av samme post kommer inn med riktig fortegn. Konsekvens: saldoavvik-varselet slår
+  falskt ut med **dobbelt** summen av de reserverte (se under). Bevisst ikke rettet per 2026-09-12.
+  Avgjørende test uten API-kall: bankens `balance_available − balance_booked` er summen av
+  reserverte slik banken ser dem – er vår signerte sum den negerte, er fortegnet snudd.
 - **Banksaldo fra banken:** ved hver synk hentes også kontoens saldo fra banken (`BankDataProvider::
   getBalances` → `BankBalance`-DTO med `booked` = kun bokført og `available` = inkl. reservert; signert,
   negativ = gjeld). Bankene oppgir flere `balanceType`/`balance_type`-er som normaliseres via en
@@ -213,7 +223,9 @@ Blade, utenfor login/SPA) kreves av Enable Banking for prod-app-godkjenning.
   null når banken ikke oppgir tilgjengelig, så vi ikke flagger falskt). Ved nøyaktig mismatch (terskel
   0,005 fanger kun flyttall-støy): et lite amber-varsel i kontodetalj-heroen, og en «Saldoavvik»-seksjon
   i den nattlige synk-e-posten (`BankSyncService::reportBalanceMismatches()` legger rapportlinjer etter
-  synk-løkka – kun et varsel, markerer **ikke** synken som feilet).
+  synk-løkka – kun et varsel, markerer **ikke** synken som feilet). NB: varselet slår i dag falskt
+  ut på kontoer med reserverte DNB-rader, med dobbelt summen av dem – se fortegnsfeilen over før du
+  leter etter et ekte avvik.
 - **Kredittkort = vanlig budsjettkonto som kan ha negativ saldo.** Ingen egen
   betalingskategori. Et kjøp på kortet er et helt vanlig kategorisert forbruk (trekker
   kategoriens `available`, ikke RTA), og gjelda reduserer «penger på konto». Kortet betales

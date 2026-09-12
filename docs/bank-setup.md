@@ -221,5 +221,6 @@ your app is approved):
 | `.env` change had no effect in production | Containers keep the environment they were created with. Run `docker compose up -d` to recreate them. |
 | "0 sync left today" / account skipped | Rate limit reached for that account. GoCardless: ~4/endpoint/day; Enable Banking: ~4 unattended/day. Wait for the daily reset. |
 | Nothing imports, no error | No queue worker running. Start one (`composer dev` locally, the `finans-worker` container in prod). |
+| Pending transactions show a positive amount (DNB) | Known DNB quirk: it reports every pending (`PDNG`) entry as `CRDT`, even card purchases, and the other structured fields are empty — so there is no reliable per-transaction direction to fall back on. Booked rows are correct, and the booked version of the same purchase arrives with the right sign. Side effect: the balance-mismatch warning fires falsely, by twice the pending total. |
 | Consent expired | Use **Renew** on the Bank page to re-authorize without losing your account links. |
 | Bank not in the list | It may only be available on the *other* provider — configure both and pick the one that lists it. |
