@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Deploy-script for finans.holthe.org på ny VPS (Docker-basert, 3 containere:
-# web/worker/scheduler bygget fra samme image).
-# Kjøres på serveren: ./deploy.sh
+# Deploy-script for prod (Docker-basert: 3 containere – web/worker/scheduler –
+# bygget fra samme image, se docker-compose.yml).
+# Kjøres på serveren fra prosjektroten: ./deploy.sh
 set -euo pipefail
 cd "$(dirname "$0")"
 

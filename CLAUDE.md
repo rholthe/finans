@@ -32,19 +32,54 @@ Test: `php artisan test`
 
 ## Kjøre i prod
 
-Prod kjører på **finans.example.com** (Apache mod_php + MariaDB; `/var/www/finans`).
-Redeploy gjøres med `./deploy.sh` i prosjektroten (maintenance-modus, `git pull`,
-`composer install --no-dev`, `npm ci && npm run build`, `migrate --force`,
-config/route/view-cache, `queue:restart`). Kjøres som kode-eier – ingen sudo.
+Prod er **Docker-basert**: tre containere bygget fra samme image (`Dockerfile`),
+definert i `docker-compose.yml`, med **MariaDB i en delt container** utenfor stacken
+og **Caddy som reverse proxy** foran:
 
-Køet synk + scheduler krever to ting på serveren (ingen Redis nødvendig — `database`-driver):
+| Container | Kommando | Rolle |
+| --- | --- | --- |
+| `finans-web` | supervisord → nginx + php-fpm | serverer appen på port 80 (kun internt i docker-nettet) |
+| `finans-worker` | `queue:work --tries=3 --max-time=3600 --sleep=3` | kø-arbeider (banksynk-jobben) |
+| `finans-scheduler` | `schedule:work` | scheduler – **erstatter cron** |
 
-- **Cron:** `* * * * * cd /sti/til/app && php artisan schedule:run >> /dev/null 2>&1`
-- **Kø-arbeider** under Supervisor: `php artisan queue:work --tries=3 --max-time=3600`
+- **Ingen cron og ingen Supervisor på verten.** `schedule:work` i sin egen container kjører
+  scheduleren i forgrunnen, og `restart: unless-stopped` + `--max-time=3600` gjør at
+  kø-arbeideren resirkuleres av Docker hver time. Fortsatt ingen Redis – `database`-driver.
+- **Nettverk** (alle `external`, opprettet utenfor dette repoet): `reverse-proxy_default`
+  (Caddy nås inn hit), `app-backend` (delt MariaDB) og `mailcowdockerized_mailcow-network`
+  (sender e-post direkte til mailcow-en på samme vert, ikke via ekstern relay).
+- **Reverse proxy:** Caddy terminerer TLS og proxyer til `http://finans-web:80` med
+  `X-Forwarded-Proto https`. Appen stoler på proxyen via `trustProxies(at: '*')` i
+  `bootstrap/app.php` – uten det blir genererte asset-URL-er `http://` bak https.
+- **Persistente data:** kun `./storage-app` er bind-mountet (`storage/app` – bl.a.
+  Enable Banking-PEM-nøkkelen). Alt annet i containeren er flyktig; databasen ligger i
+  den delte MariaDB-containeren.
 
-Scheduleren kjører nattlig banksynk og postering av planlagte transaksjoner (se `routes/console.php`).
-Offentlige `/privacy` + `/terms` (frittstående Blade, utenfor login/SPA) kreves av Enable
-Banking for prod-app-godkjenning.
+### Redeploy
+
+`./deploy.sh` i prosjektroten på serveren: `git pull --ff-only` → `docker compose build`
+→ `docker compose up -d` → `migrate --force` → config/route/view-cache i `finans-web`
+→ `docker compose restart`. Ingen maintenance-modus lenger (bygget skjer før bytte, så
+nedetiden er sekunder), og ingen `composer install`/`npm ci` på verten – begge kjører i
+byggetrinnene i `Dockerfile` (node-bygg → composer-bygg → php-fpm-runtime).
+
+### Config i prod: `.env` finnes **ikke** i containeren
+
+`.env` er i `.dockerignore` og blir aldri kopiert inn i imaget. Konfigurasjonen kommer
+utelukkende fra `env_file: .env` i compose, dvs. **miljøvariabler injisert når containeren
+opprettes**. Konsekvenser:
+
+- Etter endring i `.env` må containerne **gjenopprettes**, ikke bare restartes:
+  `docker compose up -d` (`--force-recreate` hvis compose sier «up-to-date»).
+  `docker compose restart` gjenbruker den eksisterende containeren og tar **ikke** opp nye verdier.
+- `deploy.sh` kjører `config:cache` kun i `finans-web`. Worker og scheduler kjører uten
+  cachet config og leser miljøvariablene direkte – de trenger derfor ingen `queue:restart`
+  etter config-endring, bare gjenoppretting som over.
+- Artisan i prod kjøres inne i containeren: `docker exec finans-web php artisan <kommando>`.
+
+Scheduleren kjører nattlig banksynk, postering av planlagte transaksjoner og sjekk av
+samtykkeutløp (se `routes/console.php`). Offentlige `/privacy` + `/terms` (frittstående
+Blade, utenfor login/SPA) kreves av Enable Banking for prod-app-godkjenning.
 
 ## Struktur
 

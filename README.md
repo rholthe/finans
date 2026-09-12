@@ -64,8 +64,10 @@ session + CSRF protection.
 - **Node.js 20+** and npm (for building the frontend with Vite 7)
 - A database: **SQLite** is enough locally; **MySQL/MariaDB** recommended for
   production.
-- For automatic bank sync in production: a **cron** entry and a **persistent
-  queue worker** (e.g. Supervisor). See [Production deployment](#production-deployment).
+- For automatic bank sync in production: a **persistent queue worker** and the
+  **Laravel scheduler**. The bundled Docker setup runs both as their own
+  containers — no cron or Supervisor on the host. See
+  [Production deployment](#production-deployment).
 - A free account with at least one bank aggregator —
   **[GoCardless Bank Account Data](https://gocardless.com/bank-account-data/)**
   or **[Enable Banking](https://enablebanking.com/)**. See
@@ -151,42 +153,63 @@ bank, complete the consent flow, and link each bank account to a budget account.
 
 ## Production deployment
 
-Production runs as the code-owner user (no sudo needed) on a typical
-LAMP-style host: **Apache (mod_php) or nginx + PHP-FPM**, **MariaDB/MySQL**, with
-the app at e.g. `/var/www/finans`.
+The repo ships a **Docker deployment** — a multi-stage [`Dockerfile`](Dockerfile)
+(Node build → Composer build → `php:8.4-fpm` runtime with nginx + supervisor) and a
+[`docker-compose.yml`](docker-compose.yml) that runs **three containers from the same
+image**:
 
-Two background pieces are required for automatic sync and scheduled postings —
-**no Redis needed** (the `database` queue driver is used):
+| Container | Command | Role |
+| --- | --- | --- |
+| `finans-web` | supervisord → nginx + php-fpm | serves the app on port 80 |
+| `finans-worker` | `queue:work --tries=3 --max-time=3600 --sleep=3` | queue worker (the bank sync job) |
+| `finans-scheduler` | `schedule:work` | Laravel scheduler — **replaces the cron entry** |
 
-1. **Cron** — runs Laravel's scheduler every minute:
-   ```cron
-   * * * * * cd /path/to/finans && php artisan schedule:run >> /dev/null 2>&1
-   ```
-2. **A persistent queue worker** under a process manager such as Supervisor:
-   ```ini
-   [program:finans-worker]
-   command=php /path/to/finans/artisan queue:work --tries=3 --max-time=3600
-   autostart=true
-   autorestart=true
-   user=your-code-user
-   ```
+This covers both background pieces needed for automatic sync and scheduled postings —
+**no Redis needed** (the `database` queue driver is used), and **no cron or Supervisor
+on the host**: `schedule:work` runs the scheduler in the foreground, and
+`restart: unless-stopped` combined with `--max-time=3600` lets Docker recycle the
+worker every hour.
 
-The scheduler runs the nightly bank sync (05:00), posts due scheduled
-transactions (00:05), and checks for expiring bank consents (06:00) — see
-`routes/console.php`.
+The scheduler runs the nightly bank sync (05:00), posts due scheduled transactions
+(00:05), and checks for expiring bank consents (06:00) — see `routes/console.php`.
 
-The repo includes a [`deploy.sh`](deploy.sh) that you can adapt: it enables
-maintenance mode, pulls, runs `composer install --no-dev`, `npm ci && npm run
-build`, `migrate --force`, caches config/routes/views, and restarts the queue
-worker.
+**What you need to provide around the stack:**
 
-> **Important production gotcha:** config is cached in production. Whenever you
-> change a value in `.env`, you must rebuild the cache **and recycle the queue
-> worker**, or the running app (and the long-lived worker) keep serving the old
-> values:
+- **A reverse proxy** terminating TLS in front of `finans-web` (Caddy, Traefik, nginx…).
+  The app trusts forwarded headers via `trustProxies(at: '*')` in `bootstrap/app.php`, so
+  make sure your proxy sets `X-Forwarded-Proto https` — otherwise generated asset URLs
+  come out as `http://` behind https.
+- **A MySQL/MariaDB instance** reachable from the containers. The bundled compose file
+  expects one in an external `app-backend` network rather than defining its own database
+  service, so point `DB_HOST` at it.
+- **The external networks** referenced at the bottom of `docker-compose.yml`. They're
+  declared `external: true` and are site-specific — rename or replace them to match your
+  own setup (e.g. drop the mail network if you send mail through an ordinary SMTP relay).
+- **Persistence:** only `./storage-app` is bind-mounted (it holds `storage/app`, including
+  the Enable Banking PEM key). Everything else in the container is disposable — the
+  database lives in your MySQL/MariaDB instance.
+
+### Redeploying
+
+[`deploy.sh`](deploy.sh) is run on the server from the project root: `git pull --ff-only`
+→ `docker compose build` → `docker compose up -d` → `migrate --force` →
+`config:cache`/`route:cache`/`view:cache` inside `finans-web` → `docker compose restart`.
+No maintenance mode is needed since the new image is built before the swap, and neither
+`composer install` nor `npm ci` runs on the host — both happen in the image build.
+
+> **Important production gotcha:** `.env` is in `.dockerignore` and is **never copied into
+> the image**. Config reaches the app purely as environment variables injected from
+> `env_file: .env` **when the container is created**. So after editing `.env` you must
+> *recreate* the containers, not just restart them:
 > ```bash
-> php artisan config:cache && php artisan queue:restart
+> docker compose up -d          # add --force-recreate if compose says "up-to-date"
 > ```
+> `docker compose restart` reuses the existing container and keeps serving the old values.
+> Only `finans-web` gets a cached config; the worker and scheduler read the environment
+> directly, so they need no separate `queue:restart` after a config change.
+
+Run artisan in production inside the container:
+`docker exec finans-web php artisan <command>`.
 
 **Enable Banking requires public `/privacy` and `/terms` pages** for app
 approval. These are served as standalone Blade pages (outside the login/SPA) at
@@ -209,13 +232,17 @@ approval. These are served as standalone Blade pages (outside the login/SPA) at
   `npm run dev` / `composer dev` (local). Vite assets must be rebuilt.
 - **`Unable to locate file in Vite manifest`** — same fix: build the frontend.
 - **Bank sync jobs never run** — you don't have a queue worker running. Use
-  `composer dev` locally or a Supervisor worker in production.
+  `composer dev` locally, or check that the `finans-worker` container is up in
+  production (`docker compose ps`).
 - **`PSU_HEADER_NOT_PROVIDED` / `ASPSP_ERROR` from Enable Banking** — some banks
   require the `psu-ip-address` header for unattended sync. Set
-  `ENABLEBANKING_PSU_IP` to your server's outbound public IP, then
-  `config:cache && queue:restart`. See [docs/bank-setup.md](docs/bank-setup.md).
-- **Changed `.env` in production but nothing happened** — rebuild the config
-  cache and restart the worker (see the gotcha above).
+  `ENABLEBANKING_PSU_IP` to your server's outbound public IP, then recreate the
+  containers (`docker compose up -d`). Remember to update it if you migrate to a
+  new server — the outbound IP changes with it. See
+  [docs/bank-setup.md](docs/bank-setup.md).
+- **Changed `.env` in production but nothing happened** — the containers still hold
+  the environment they were created with. Recreate them with `docker compose up -d`
+  (see the gotcha above); a bare `docker compose restart` is not enough.
 
 ## Contributing
 

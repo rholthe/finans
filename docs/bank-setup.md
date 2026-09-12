@@ -151,11 +151,12 @@ sync right after connecting worked.
   `ENABLEBANKING_PSU_IP` empty if you don't need it (no header is sent — the
   prior behavior).
 
-After changing these in production, rebuild the config cache and restart the
-worker so the change takes effect:
+After changing these in production, recreate the containers so the new
+environment is picked up (`.env` is injected at container creation, so a bare
+`docker compose restart` is not enough):
 
 ```bash
-php artisan config:cache && php artisan queue:restart
+docker compose up -d   # add --force-recreate if compose says "up-to-date"
 ```
 
 You can inspect what a given bank requires with the built-in diagnostic command:
@@ -216,9 +217,9 @@ your app is approved):
 
 | Symptom | Likely cause & fix |
 |---|---|
-| First sync works, later syncs fail with `ASPSP_ERROR` / `PSU_HEADER_NOT_PROVIDED` (Enable Banking) | Bank requires `psu-ip-address` on unattended access. Set `ENABLEBANKING_PSU_IP` to the server's outbound IP, then `config:cache && queue:restart`. |
-| `.env` change had no effect in production | Config is cached and the queue worker is long-lived. Run `php artisan config:cache && php artisan queue:restart`. |
+| First sync works, later syncs fail with `ASPSP_ERROR` / `PSU_HEADER_NOT_PROVIDED` (Enable Banking) | Bank requires `psu-ip-address` on unattended access. Set `ENABLEBANKING_PSU_IP` to the server's outbound IP, then `docker compose up -d`. Note this IP changes when you move to a new server. |
+| `.env` change had no effect in production | Containers keep the environment they were created with. Run `docker compose up -d` to recreate them. |
 | "0 sync left today" / account skipped | Rate limit reached for that account. GoCardless: ~4/endpoint/day; Enable Banking: ~4 unattended/day. Wait for the daily reset. |
-| Nothing imports, no error | No queue worker running. Start one (`composer dev` locally, Supervisor in prod). |
+| Nothing imports, no error | No queue worker running. Start one (`composer dev` locally, the `finans-worker` container in prod). |
 | Consent expired | Use **Renew** on the Bank page to re-authorize without losing your account links. |
 | Bank not in the list | It may only be available on the *other* provider — configure both and pick the one that lists it. |
