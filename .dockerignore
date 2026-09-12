@@ -11,3 +11,7 @@ storage/framework/views
 storage/logs
 .idea
 .phpunit.result.cache
+
+# Cache-filer skal aldri bakes inn i imaget; de bygges ved container-oppstart
+# (docker/entrypoint.sh) ut fra de injiserte miljovariablene.
+bootstrap/cache/*.php

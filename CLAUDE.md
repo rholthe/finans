@@ -58,10 +58,17 @@ og **Caddy som reverse proxy** foran:
 ### Redeploy
 
 `./deploy.sh` i prosjektroten på serveren: `git pull --ff-only` → `docker compose build`
-→ `docker compose up -d` → `migrate --force` → config/route/view-cache i `finans-web`
-→ `docker compose restart`. Ingen maintenance-modus lenger (bygget skjer før bytte, så
-nedetiden er sekunder), og ingen `composer install`/`npm ci` på verten – begge kjører i
-byggetrinnene i `Dockerfile` (node-bygg → composer-bygg → php-fpm-runtime).
+→ `docker compose up -d` → `migrate --force` → kontroll av at cachen ble bygget.
+Ingen maintenance-modus (bygget skjer før bytte, så nedetiden er sekunder), og ingen
+`composer install`/`npm ci` på verten – begge kjører i byggetrinnene i `Dockerfile`
+(node-bygg → composer-bygg → php-fpm-runtime).
+
+**Config-/rute-/view-cachen bygges av `docker/entrypoint.sh` ved hver container-oppstart**,
+ikke av deploy-scriptet. Grunnen: cachen skrives til containerens skrivbare lag, som
+forsvinner ved hver gjenoppretting – bygget i deploy-scriptet ville den vært borte igjen
+første gang noen kjørte `docker compose up -d` utenom en deploy. Fra entrypointet speiler
+den alltid miljøvariablene containeren faktisk ble startet med, og alle tre containerne får
+den. Cachingen er best effort: feiler den, starter containeren likevel (uten cache).
 
 ### Config i prod: `.env` finnes **ikke** i containeren
 
@@ -72,9 +79,9 @@ opprettes**. Konsekvenser:
 - Etter endring i `.env` må containerne **gjenopprettes**, ikke bare restartes:
   `docker compose up -d` (`--force-recreate` hvis compose sier «up-to-date»).
   `docker compose restart` gjenbruker den eksisterende containeren og tar **ikke** opp nye verdier.
-- `deploy.sh` kjører `config:cache` kun i `finans-web`. Worker og scheduler kjører uten
-  cachet config og leser miljøvariablene direkte – de trenger derfor ingen `queue:restart`
-  etter config-endring, bare gjenoppretting som over.
+- Alle tre containerne bygger config-cachen på nytt ved oppstart (entrypointet), så en
+  gjenoppretting er alt som trengs etter en `.env`-endring – ingen `queue:restart` eller
+  manuell `config:cache`.
 - Artisan i prod kjøres inne i containeren: `docker exec finans-web php artisan <kommando>`.
 
 Scheduleren kjører nattlig banksynk, postering av planlagte transaksjoner og sjekk av

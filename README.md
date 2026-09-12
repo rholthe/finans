@@ -192,10 +192,17 @@ The scheduler runs the nightly bank sync (05:00), posts due scheduled transactio
 ### Redeploying
 
 [`deploy.sh`](deploy.sh) is run on the server from the project root: `git pull --ff-only`
-→ `docker compose build` → `docker compose up -d` → `migrate --force` →
-`config:cache`/`route:cache`/`view:cache` inside `finans-web` → `docker compose restart`.
-No maintenance mode is needed since the new image is built before the swap, and neither
-`composer install` nor `npm ci` runs on the host — both happen in the image build.
+→ `docker compose build` → `docker compose up -d` → `migrate --force` → a check that the
+caches were built. No maintenance mode is needed since the new image is built before the
+swap, and neither `composer install` nor `npm ci` runs on the host — both happen in the
+image build.
+
+**The config/route/view caches are built by [`docker/entrypoint.sh`](docker/entrypoint.sh)
+on every container start**, not by the deploy script. They live in the container's writable
+layer, so anything written during a deploy is lost the next time a container is recreated
+(`docker compose up -d`). Building them at startup means they always reflect the environment
+the container was actually started with, and all three containers get them. It's best-effort:
+if a cache command fails the container still starts, just without that cache.
 
 > **Important production gotcha:** `.env` is in `.dockerignore` and is **never copied into
 > the image**. Config reaches the app purely as environment variables injected from
@@ -205,8 +212,8 @@ No maintenance mode is needed since the new image is built before the swap, and 
 > docker compose up -d          # add --force-recreate if compose says "up-to-date"
 > ```
 > `docker compose restart` reuses the existing container and keeps serving the old values.
-> Only `finans-web` gets a cached config; the worker and scheduler read the environment
-> directly, so they need no separate `queue:restart` after a config change.
+> All three containers rebuild their config cache at startup, so recreating them is all that
+> is needed — no separate `queue:restart` or manual `config:cache`.
 
 Run artisan in production inside the container:
 `docker exec finans-web php artisan <command>`.
