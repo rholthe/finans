@@ -70,10 +70,11 @@ første gang noen kjørte `docker compose up -d` utenom en deploy. Fra entrypoin
 den alltid miljøvariablene containeren faktisk ble startet med, og alle tre containerne får
 den. Cachingen er best effort: feiler den, starter containeren likevel (uten cache).
 
-NB: `deploy.sh` endrer seg selv via `git pull`. Bash leser scriptet fra den allerede
-åpne inoden, så **første deploy etter en endring i `deploy.sh` kjører den gamle versjonen** –
-den nye slår inn først ved neste deploy. Uskyldig så lenge stegene er idempotente, men verdt
-å vite når man endrer selve deploy-flyten.
+`deploy.sh` **re-exec-er seg selv** etter `git pull`: bash leser scriptet fra den allerede
+åpne inoden, så uten dette ville resten av kjøringen brukt den gamle versjonen av scriptet, og
+endringer i deploy-flyten slått inn først ved neste deploy. Første pass henter koden og kjører
+`exec` på den nye fila; `DEPLOY_REEXEC=1` gjør at andre pass hopper over `git pull` og kjører
+resten, så det aldri blir en løkke.
 
 ### Config i prod: `.env` finnes **ikke** i containeren
 

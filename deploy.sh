@@ -5,8 +5,23 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-echo "==> Henter siste kode"
-git pull --ff-only
+# Første pass: hent koden og start scriptet på nytt.
+#
+# `git pull` kan endre dette scriptet mens det kjører. Bash leser scriptet
+# fra den allerede åpne inoden, så resten av kjøringen ville fortsatt brukt
+# den GAMLE versjonen - endringer i deploy-flyten slo derfor først inn ved
+# neste deploy. `exec` erstatter prosessen med den nye fila, én gang, styrt
+# av DEPLOY_REEXEC slik at det ikke kan bli en løkke.
+if [ "${DEPLOY_REEXEC:-}" != "1" ]; then
+    SCRIPT="$PWD/$(basename "$0")"
+
+    echo "==> Henter siste kode"
+    git pull --ff-only
+
+    echo "==> Starter deploy-scriptet på nytt fra den nye versjonen"
+    export DEPLOY_REEXEC=1
+    exec "$SCRIPT" "$@"
+fi
 
 echo "==> Bygger nye images (web, worker, scheduler)"
 docker compose build
