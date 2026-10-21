@@ -13,6 +13,7 @@ use App\Models\Transaction;
 use App\Services\Rules\RuleEngine;
 use App\Services\Rules\RuleResult;
 use App\Support\AppSettings;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Throwable;
@@ -243,12 +244,30 @@ class BankSyncService
 
         $newBooked = 0;
         $pendingCount = 0;
+        $adoptable = null;
 
         foreach ($transactions as $transaction) {
             if ($transaction->booked) {
                 $key = $bankAccount->account_id.':'.$transaction->externalId;
                 if (isset($seen[$key])) {
                     continue;
+                }
+
+                // Innholdsavledet id som ikke er sett før: posten kan likevel være
+                // importert tidligere under en annen id (bankens egen, eller en
+                // tilfeldig fra før reserve-id-en ble deterministisk). Adopter den
+                // raden i stedet for å lage en dublett.
+                if ($transaction->syntheticId) {
+                    $adoptable ??= $this->adoptableRows($bankAccount->account_id);
+                    $contentKey = $this->contentKey($transaction->date, $transaction->amount, $transaction->description);
+                    $rowId = isset($adoptable[$contentKey]) ? array_shift($adoptable[$contentKey]) : null;
+
+                    if ($rowId !== null) {
+                        Transaction::whereKey($rowId)->update(['external_id' => $transaction->externalId]);
+                        $seen[$key] = 1;
+
+                        continue;
+                    }
                 }
 
                 $this->createFromBank($bankAccount, $transaction, booked: true);
@@ -269,6 +288,36 @@ class BankSyncService
                 'iban' => $bankAccount->displayName(),
             ])
         );
+    }
+
+    /**
+     * Bokførte bankrader på kontoen som ikke har en innholdsavledet id, gruppert
+     * på dato/beløp/infotekst (eldste først) – kandidater for adopsjon av poster
+     * banken ikke lenger oppgir egen id for.
+     *
+     * @return array<string, list<int>>
+     */
+    private function adoptableRows(int $accountId): array
+    {
+        $rows = [];
+
+        Transaction::query()
+            ->where('account_id', $accountId)
+            ->where('pending', false)
+            ->whereNotNull('external_id')
+            ->where('external_id', 'not like', 'eb-hash:%')
+            ->orderBy('id')
+            ->get(['id', 'date', 'amount', 'bank_description'])
+            ->each(function (Transaction $t) use (&$rows): void {
+                $rows[$this->contentKey($t->date, (float) $t->amount, $t->bank_description)][] = $t->id;
+            });
+
+        return $rows;
+    }
+
+    private function contentKey(mixed $date, float $amount, ?string $description): string
+    {
+        return Carbon::parse($date)->toDateString().'|'.number_format($amount, 2, '.', '').'|'.$description;
     }
 
     /**

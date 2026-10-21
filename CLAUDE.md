@@ -267,7 +267,14 @@ Blade, utenfor login/SPA) kreves av Enable Banking for prod-app-godkjenning.
   er virkelig borte og de rå `DB::table`/`selectRaw`-aggregatene (budsjett/rapport) forblir korrekte
   uten scope-endringer. Tombstones er permanente (ingen «tillat re-import» i dag).
 - **Banksynk:** deduplisering per `account_id:external_id` (samme external_id kan gjelde flere
-  kontoer). Rapport-e-post sendes ved både suksess og feil til `AppSettings::reportEmail()` –
+  kontoer). **Poster uten bank-id:** DNB sluttet i oktober 2026 å sende både `entry_reference` og
+  `transaction_id` på bokførte poster (tidligere fallback `Str::uuid()` ga en ny dublett ved hver synk).
+  `EnableBankingProvider` lager derfor en deterministisk `eb-hash:<sha1>:<løpenr>`-id av innholdet
+  (status, datoer, beløp, retning, meldingstekst, motpart) med løpenummer for helt like poster i samme
+  henting, og flagger `NormalizedTransaction::$syntheticId`. En slik id som ikke er sett før **adopterer**
+  en eksisterende bokført rad på kontoen med samme dato + beløp + `bank_description` (id-en skrives om,
+  kategori/lås beholdes) i stedet for å lage en ny – det dekker overgangen fra bankens/uuid-id-er.
+  Rapport-e-post sendes ved både suksess og feil til `AppSettings::reportEmail()` –
   innstillingen `report_email` (satt under Innstillinger) vinner, med `BANK_SYNC_REPORT_EMAIL` i
   config som legacy-fallback. GoCardless
   oppgir rate-limit i headere (`X-RateLimit-Account-Success-*`); Enable Banking gjør **ikke** det –

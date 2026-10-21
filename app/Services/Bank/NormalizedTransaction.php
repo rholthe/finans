@@ -15,6 +15,8 @@ readonly class NormalizedTransaction
      * @param  string  $description  Full info-tekst (matchegrunnlag for regelmotoren)
      * @param  bool  $booked  true = bokført, false = reservert (PEND)
      * @param  array<string, mixed>  $raw  Rådata fra leverandøren
+     * @param  bool  $syntheticId  true = banken oppga ingen id, så $externalId er
+     *                             avledet av innholdet (se EnableBankingProvider)
      */
     public function __construct(
         public string $externalId,
@@ -26,5 +28,6 @@ readonly class NormalizedTransaction
         public ?string $memo,
         public bool $booked = true,
         public array $raw = [],
+        public bool $syntheticId = false,
     ) {}
 }

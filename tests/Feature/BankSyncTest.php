@@ -36,7 +36,7 @@ class BankSyncTest extends TestCase
         $this->app->instance(GoCardlessProvider::class, $this->provider);
     }
 
-    private function tx(string $id, float $amount, string $date = '2026-01-10', string $payee = 'Butikk', bool $booked = true): NormalizedTransaction
+    private function tx(string $id, float $amount, string $date = '2026-01-10', string $payee = 'Butikk', bool $booked = true, bool $syntheticId = false): NormalizedTransaction
     {
         return new NormalizedTransaction(
             externalId: $id,
@@ -48,6 +48,7 @@ class BankSyncTest extends TestCase
             memo: $payee,
             booked: $booked,
             raw: ['internalTransactionId' => $id],
+            syntheticId: $syntheticId,
         );
     }
 
@@ -169,6 +170,79 @@ class BankSyncTest extends TestCase
         $event = $this->sync();
 
         $this->assertSame(1, $event->imported_count); // kun tx-2
+        $this->assertDatabaseCount('transactions', 2);
+    }
+
+    public function test_innholdsavledet_id_dupliseres_ikke_over_flere_synker(): void
+    {
+        $this->linkedAccount();
+        $this->provider->transactions['acc1'] = [$this->tx('eb-hash:abc:1', -39.10, syntheticId: true)];
+
+        $this->assertSame(1, $this->sync()->imported_count);
+        $this->assertSame(0, $this->sync()->imported_count);
+        $this->assertDatabaseCount('transactions', 1);
+    }
+
+    public function test_innholdsavledet_id_adopterer_rad_importert_under_annen_id(): void
+    {
+        // Posten ble importert med bankens id (eller en tilfeldig uuid) før banken
+        // sluttet å sende id: raden skal få den nye id-en, ikke dupliseres.
+        $bankAccount = $this->linkedAccount();
+        $existing = Transaction::create([
+            'account_id' => $bankAccount->account_id,
+            'external_id' => 'MDExNl8wMDI5',
+            'bank_description' => 'Kiwi',
+            'date' => '2026-10-09',
+            'amount' => -39.10,
+            'locked' => true,
+        ]);
+        $this->provider->transactions['acc1'] = [$this->tx('eb-hash:abc:1', -39.10, '2026-10-09', 'Kiwi', syntheticId: true)];
+
+        $event = $this->sync();
+
+        $this->assertSame(0, $event->imported_count);
+        $this->assertDatabaseCount('transactions', 1);
+        $this->assertSame('eb-hash:abc:1', $existing->fresh()->external_id);
+        $this->assertTrue($existing->fresh()->locked);
+    }
+
+    public function test_like_poster_uten_bank_id_adopterer_kun_like_mange_rader(): void
+    {
+        // To like kjøp samme dag, bare det ene er importert fra før.
+        $bankAccount = $this->linkedAccount();
+        Transaction::create([
+            'account_id' => $bankAccount->account_id,
+            'external_id' => 'gammel-1',
+            'bank_description' => 'Kiwi',
+            'date' => '2026-10-09',
+            'amount' => -39.10,
+        ]);
+        $this->provider->transactions['acc1'] = [
+            $this->tx('eb-hash:abc:1', -39.10, '2026-10-09', 'Kiwi', syntheticId: true),
+            $this->tx('eb-hash:abc:2', -39.10, '2026-10-09', 'Kiwi', syntheticId: true),
+        ];
+
+        $this->assertSame(1, $this->sync()->imported_count);
+        $this->assertDatabaseHas('transactions', ['external_id' => 'eb-hash:abc:1']);
+        $this->assertDatabaseHas('transactions', ['external_id' => 'eb-hash:abc:2']);
+        $this->assertDatabaseCount('transactions', 2);
+    }
+
+    public function test_bankens_egen_id_adopterer_ikke_rader(): void
+    {
+        // Adopsjon gjelder kun innholdsavledede id-er; en ekte ny bank-id med
+        // tilfeldigvis likt innhold er en ny post.
+        $bankAccount = $this->linkedAccount();
+        Transaction::create([
+            'account_id' => $bankAccount->account_id,
+            'external_id' => 'tx-1',
+            'bank_description' => 'Kiwi',
+            'date' => '2026-10-09',
+            'amount' => -39.10,
+        ]);
+        $this->provider->transactions['acc1'] = [$this->tx('tx-2', -39.10, '2026-10-09', 'Kiwi')];
+
+        $this->assertSame(1, $this->sync()->imported_count);
         $this->assertDatabaseCount('transactions', 2);
     }
 

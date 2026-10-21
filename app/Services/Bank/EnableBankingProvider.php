@@ -158,10 +158,49 @@ class EnableBankingProvider implements BankDataProvider
             'date_from' => $dateFrom,
         ])->json('transactions') ?? [];
 
-        return array_values(array_map(
-            fn (array $raw): NormalizedTransaction => $this->normalize($raw),
-            $entries,
-        ));
+        $occurrences = [];
+        $transactions = [];
+
+        foreach ($entries as $raw) {
+            $transactions[] = $this->normalize($raw, $occurrences);
+        }
+
+        return $transactions;
+    }
+
+    /**
+     * Deterministisk reserve-id for poster uten `entry_reference`/`transaction_id`
+     * (DNB sluttet å sende begge på bokførte poster i oktober 2026). En tilfeldig
+     * id ville gitt en ny dublett ved hver synk, så id-en avledes av innholdet.
+     * Helt like poster i samme henting (f.eks. to like kjøp samme dag) skilles med
+     * et løpenummer; siden `date_from` er en hel dato kommer alle poster fra samme
+     * dag alltid med i samme henting, så løpenummeret er stabilt mellom synker.
+     * Status er med, så en reservert og en bokført versjon aldri får samme id.
+     *
+     * @param  array<string, mixed>  $raw
+     * @param  array<string, int>  $occurrences
+     */
+    private function contentId(array $raw, array &$occurrences): string
+    {
+        $hash = sha1((string) json_encode([
+            strtoupper((string) ($raw['status'] ?? 'BOOK')),
+            $raw['booking_date'] ?? null,
+            $raw['value_date'] ?? null,
+            $raw['transaction_date'] ?? null,
+            data_get($raw, 'transaction_amount.amount'),
+            data_get($raw, 'transaction_amount.currency'),
+            $raw['credit_debit_indicator'] ?? null,
+            $raw['remittance_information'] ?? null,
+            $raw['reference_number'] ?? null,
+            data_get($raw, 'creditor.name'),
+            data_get($raw, 'debtor.name'),
+            $raw['creditor_account'] ?? null,
+            $raw['debtor_account'] ?? null,
+        ]));
+
+        $occurrence = $occurrences[$hash] = ($occurrences[$hash] ?? 0) + 1;
+
+        return "eb-hash:{$hash}:{$occurrence}";
     }
 
     public function getBalances(string $accountId): BankBalance
@@ -220,9 +259,12 @@ class EnableBankingProvider implements BankDataProvider
      * egen debet/kredit-indikator, og infoteksten bygges fra strukturerte felter.
      *
      * @param  array<string, mixed>  $raw
+     * @param  array<string, int>  $occurrences  Løpenummer per innholds-hash (se contentId)
      */
-    private function normalize(array $raw): NormalizedTransaction
+    private function normalize(array $raw, array &$occurrences): NormalizedTransaction
     {
+        $bankId = $raw['entry_reference'] ?? $raw['transaction_id'] ?? null;
+
         $amount = (float) data_get($raw, 'transaction_amount.amount', 0);
         if (strtoupper((string) ($raw['credit_debit_indicator'] ?? 'DBIT')) === 'DBIT') {
             $amount = -abs($amount);
@@ -234,7 +276,7 @@ class EnableBankingProvider implements BankDataProvider
         $payee = $this->resolvePayee($raw) ?? Str::limit($info, 255, '');
 
         return new NormalizedTransaction(
-            externalId: (string) ($raw['entry_reference'] ?? $raw['transaction_id'] ?? Str::uuid()),
+            externalId: $bankId !== null ? (string) $bankId : $this->contentId($raw, $occurrences),
             date: $this->resolveDate($raw),
             amount: $amount,
             currency: (string) data_get($raw, 'transaction_amount.currency', 'NOK'),
@@ -243,6 +285,7 @@ class EnableBankingProvider implements BankDataProvider
             memo: $info,
             booked: strtoupper((string) ($raw['status'] ?? 'BOOK')) === 'BOOK',
             raw: $raw,
+            syntheticId: $bankId === null,
         );
     }
 

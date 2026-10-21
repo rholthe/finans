@@ -232,6 +232,56 @@ class EnableBankingProviderTest extends TestCase
         $this->assertFalse($result[1]->booked);
     }
 
+    public function test_post_uten_bank_id_faar_stabil_innholdsavledet_id(): void
+    {
+        // DNB (okt. 2026): bokførte poster uten entry_reference og transaction_id.
+        $row = [
+            'entry_reference' => null,
+            'transaction_id' => null,
+            'booking_date' => '2026-10-20',
+            'value_date' => '2026-10-20',
+            'transaction_amount' => ['amount' => '39.10', 'currency' => 'NOK'],
+            'credit_debit_indicator' => 'DBIT',
+            'status' => 'BOOK',
+            'remittance_information' => ['Varekjøp, Kiwi'],
+        ];
+        $other = ['transaction_amount' => ['amount' => '26.90', 'currency' => 'NOK']] + $row;
+        $pending = ['status' => 'PEND'] + $row;
+
+        Http::fake([
+            'eb.test/accounts/acc-1/transactions*' => Http::response(['transactions' => [$row, $row, $other, $pending]]),
+        ]);
+
+        $first = (new EnableBankingProvider)->getTransactions('acc-1', 'DNB', '2026-10-01');
+        $second = (new EnableBankingProvider)->getTransactions('acc-1', 'DNB', '2026-10-01');
+
+        $ids = array_map(fn ($t) => $t->externalId, $first);
+
+        // Samme innhold gir samme id mellom hentinger (ikke tilfeldig uuid).
+        $this->assertSame($ids, array_map(fn ($t) => $t->externalId, $second));
+        $this->assertStringStartsWith('eb-hash:', $ids[0]);
+        $this->assertTrue($first[0]->syntheticId);
+        // To helt like poster skilles med løpenummer; alle id-er er unike, også
+        // reservert vs bokført med ellers likt innhold.
+        $this->assertStringEndsWith(':1', $ids[0]);
+        $this->assertStringEndsWith(':2', $ids[1]);
+        $this->assertCount(4, array_unique($ids));
+    }
+
+    public function test_bankens_egen_id_brukes_naar_den_finnes(): void
+    {
+        Http::fake([
+            'eb.test/accounts/acc-1/transactions*' => Http::response(['transactions' => [
+                ['transaction_id' => 'tx-9', 'booking_date' => '2026-01-10', 'transaction_amount' => ['amount' => '100', 'currency' => 'NOK'], 'credit_debit_indicator' => 'CRDT', 'status' => 'BOOK'],
+            ]]),
+        ]);
+
+        $result = (new EnableBankingProvider)->getTransactions('acc-1', 'DNB', '2026-01-01');
+
+        $this->assertSame('tx-9', $result[0]->externalId);
+        $this->assertFalse($result[0]->syntheticId);
+    }
+
     public function test_banksaldo_normaliseres_med_fortegn_fra_indikator(): void
     {
         Http::fake([
