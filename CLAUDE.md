@@ -276,6 +276,9 @@ Blade, utenfor login/SPA) kreves av Enable Banking for prod-app-godkjenning.
   kategori/lås beholdes) – det dekker overgangen fra bankens/uuid-id-er. Paringen skjer i to omganger
   (`BankSyncService::adoptions`): først dato + beløp + `bank_description`, så dato + beløp alene, fordi
   DNB samtidig endret tekstformatet (f.eks. `Visa 100321, X` → `Visa, X`); hver rad pares med høyst én post.
+  Transaksjonslisten fra Enable Banking er **paginert** (`continuation_key`, også etter tomme sider);
+  `getTransactions` følger den til siste side (tak: `MAX_TRANSACTION_PAGES`) – før det dekket lange
+  vinduer på store kontoer bare nyeste side (~10 dager på DNB Felleskonto).
   Rapport-e-post sendes ved både suksess og feil til `AppSettings::reportEmail()` –
   innstillingen `report_email` (satt under Innstillinger) vinner, med `BANK_SYNC_REPORT_EMAIL` i
   config som legacy-fallback. GoCardless

@@ -25,6 +25,9 @@ class EnableBankingProvider implements BankDataProvider
 {
     public const KEY = 'enablebanking';
 
+    /** Sikring mot en uendelig continuation_key-løkke. */
+    private const MAX_TRANSACTION_PAGES = 100;
+
     private string $baseUri;
 
     private string $applicationId;
@@ -154,9 +157,25 @@ class EnableBankingProvider implements BankDataProvider
 
         // Uten transaction_status-filter returnerer Enable Banking både bokførte
         // (BOOK) og reserverte (PEND); status leses per rad i normalize().
-        $entries = $this->request('GET', "/accounts/{$accountId}/transactions", [
-            'date_from' => $dateFrom,
-        ])->json('transactions') ?? [];
+        // Svaret er paginert: følg continuation_key til den uteblir (en side kan
+        // være tom selv om flere følger), ellers dekkes bare nyeste del av vinduet.
+        $entries = [];
+        $continuationKey = null;
+        $pages = 0;
+
+        do {
+            if (++$pages > self::MAX_TRANSACTION_PAGES) {
+                throw new RuntimeException('Enable Banking: mer enn '.self::MAX_TRANSACTION_PAGES." sider med transaksjoner for konto {$accountId}.");
+            }
+
+            $response = $this->request('GET', "/accounts/{$accountId}/transactions", array_filter([
+                'date_from' => $dateFrom,
+                'continuation_key' => $continuationKey,
+            ]));
+
+            array_push($entries, ...($response->json('transactions') ?? []));
+            $continuationKey = $response->json('continuation_key');
+        } while ($continuationKey);
 
         $occurrences = [];
         $transactions = [];

@@ -268,6 +268,24 @@ class EnableBankingProviderTest extends TestCase
         $this->assertCount(4, array_unique($ids));
     }
 
+    public function test_transaksjoner_hentes_fra_alle_sider(): void
+    {
+        $row = fn (string $id, string $date): array => ['entry_reference' => $id, 'booking_date' => $date, 'transaction_amount' => ['amount' => '10', 'currency' => 'NOK'], 'credit_debit_indicator' => 'DBIT', 'status' => 'BOOK'];
+
+        Http::fake([
+            'eb.test/accounts/acc-1/transactions*' => Http::sequence()
+                ->push(['transactions' => [$row('tx-3', '2026-10-12')], 'continuation_key' => 'side-2'])
+                ->push(['transactions' => [], 'continuation_key' => 'side-3']) // tom side midt i
+                ->push(['transactions' => [$row('tx-2', '2026-09-30'), $row('tx-1', '2026-09-21')], 'continuation_key' => null]),
+        ]);
+
+        $result = (new EnableBankingProvider)->getTransactions('acc-1', 'DNB', '2026-09-21');
+
+        $this->assertSame(['tx-3', 'tx-2', 'tx-1'], array_map(fn ($t) => $t->externalId, $result));
+        Http::assertSentCount(3);
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'continuation_key=side-3') && str_contains($request->url(), 'date_from=2026-09-21'));
+    }
+
     public function test_bankens_egen_id_brukes_naar_den_finnes(): void
     {
         Http::fake([
