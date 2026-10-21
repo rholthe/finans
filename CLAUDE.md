@@ -272,8 +272,10 @@ Blade, utenfor login/SPA) kreves av Enable Banking for prod-app-godkjenning.
   `EnableBankingProvider` lager derfor en deterministisk `eb-hash:<sha1>:<løpenr>`-id av innholdet
   (status, datoer, beløp, retning, meldingstekst, motpart) med løpenummer for helt like poster i samme
   henting, og flagger `NormalizedTransaction::$syntheticId`. En slik id som ikke er sett før **adopterer**
-  en eksisterende bokført rad på kontoen med samme dato + beløp + `bank_description` (id-en skrives om,
-  kategori/lås beholdes) i stedet for å lage en ny – det dekker overgangen fra bankens/uuid-id-er.
+  en eksisterende bokført rad (uten `eb-hash`-id) på kontoen i stedet for å lage en ny (id-en skrives om,
+  kategori/lås beholdes) – det dekker overgangen fra bankens/uuid-id-er. Paringen skjer i to omganger
+  (`BankSyncService::adoptions`): først dato + beløp + `bank_description`, så dato + beløp alene, fordi
+  DNB samtidig endret tekstformatet (f.eks. `Visa 100321, X` → `Visa, X`); hver rad pares med høyst én post.
   Rapport-e-post sendes ved både suksess og feil til `AppSettings::reportEmail()` –
   innstillingen `report_email` (satt under Innstillinger) vinner, med `BANK_SYNC_REPORT_EMAIL` i
   config som legacy-fallback. GoCardless

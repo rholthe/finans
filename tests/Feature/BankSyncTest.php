@@ -228,6 +228,41 @@ class BankSyncTest extends TestCase
         $this->assertDatabaseCount('transactions', 2);
     }
 
+    public function test_innholdsavledet_id_adopterer_rad_med_gammelt_tekstformat(): void
+    {
+        // DNB endret også infoteksten da id-ene forsvant: samme post, ny tekst.
+        $bankAccount = $this->linkedAccount();
+        $existing = Transaction::create([
+            'account_id' => $bankAccount->account_id,
+            'external_id' => 'MDExNl8wMDI5',
+            'bank_description' => 'Visa 100321, Fox Grill Solsiden As',
+            'date' => '2026-10-19',
+            'amount' => -238,
+        ]);
+        $this->provider->transactions['acc1'] = [$this->tx('eb-hash:abc:1', -238, '2026-10-19', 'Visa, Fox Grill Solsiden As', syntheticId: true)];
+
+        $this->assertSame(0, $this->sync()->imported_count);
+        $this->assertDatabaseCount('transactions', 1);
+        $this->assertSame('eb-hash:abc:1', $existing->fresh()->external_id);
+    }
+
+    public function test_adopsjon_foretrekker_eksakt_tekst_foran_kun_dato_og_belop(): void
+    {
+        // To poster med samme dato og beløp. Den med ny tekst kommer først i
+        // hentingen, men skal ikke stjele raden som den andre matcher eksakt.
+        $bankAccount = $this->linkedAccount();
+        $fox = Transaction::create(['account_id' => $bankAccount->account_id, 'external_id' => 'gammel-fox', 'bank_description' => 'Visa 100321, Fox Grill', 'date' => '2026-10-19', 'amount' => -238]);
+        $kiwi = Transaction::create(['account_id' => $bankAccount->account_id, 'external_id' => 'gammel-kiwi', 'bank_description' => 'Visa, Kiwi', 'date' => '2026-10-19', 'amount' => -238]);
+        $this->provider->transactions['acc1'] = [
+            $this->tx('eb-hash:fox:1', -238, '2026-10-19', 'Visa, Fox Grill', syntheticId: true),
+            $this->tx('eb-hash:kiwi:1', -238, '2026-10-19', 'Visa, Kiwi', syntheticId: true),
+        ];
+
+        $this->assertSame(0, $this->sync()->imported_count);
+        $this->assertSame('eb-hash:fox:1', $fox->fresh()->external_id);
+        $this->assertSame('eb-hash:kiwi:1', $kiwi->fresh()->external_id);
+    }
+
     public function test_bankens_egen_id_adopterer_ikke_rader(): void
     {
         // Adopsjon gjelder kun innholdsavledede id-er; en ekte ny bank-id med

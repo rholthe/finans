@@ -13,7 +13,6 @@ use App\Models\Transaction;
 use App\Services\Rules\RuleEngine;
 use App\Services\Rules\RuleResult;
 use App\Support\AppSettings;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Throwable;
@@ -244,7 +243,7 @@ class BankSyncService
 
         $newBooked = 0;
         $pendingCount = 0;
-        $adoptable = null;
+        $adoptions = $this->adoptions($bankAccount, $transactions, $seen);
 
         foreach ($transactions as $transaction) {
             if ($transaction->booked) {
@@ -253,21 +252,11 @@ class BankSyncService
                     continue;
                 }
 
-                // Innholdsavledet id som ikke er sett før: posten kan likevel være
-                // importert tidligere under en annen id (bankens egen, eller en
-                // tilfeldig fra før reserve-id-en ble deterministisk). Adopter den
-                // raden i stedet for å lage en dublett.
-                if ($transaction->syntheticId) {
-                    $adoptable ??= $this->adoptableRows($bankAccount->account_id);
-                    $contentKey = $this->contentKey($transaction->date, $transaction->amount, $transaction->description);
-                    $rowId = isset($adoptable[$contentKey]) ? array_shift($adoptable[$contentKey]) : null;
+                if (isset($adoptions[$transaction->externalId])) {
+                    Transaction::whereKey($adoptions[$transaction->externalId])->update(['external_id' => $transaction->externalId]);
+                    $seen[$key] = 1;
 
-                    if ($rowId !== null) {
-                        Transaction::whereKey($rowId)->update(['external_id' => $transaction->externalId]);
-                        $seen[$key] = 1;
-
-                        continue;
-                    }
+                    continue;
                 }
 
                 $this->createFromBank($bankAccount, $transaction, booked: true);
@@ -291,33 +280,59 @@ class BankSyncService
     }
 
     /**
-     * Bokførte bankrader på kontoen som ikke har en innholdsavledet id, gruppert
-     * på dato/beløp/infotekst (eldste først) – kandidater for adopsjon av poster
-     * banken ikke lenger oppgir egen id for.
+     * Innholdsavledede id-er som ikke er sett før kan likevel høre til en post som
+     * er importert tidligere under en annen id (bankens egen, eller en tilfeldig fra
+     * før reserve-id-en ble deterministisk). Par dem med eksisterende bokførte rader
+     * uten innholdsavledet id, så raden adopteres i stedet for å dupliseres: først
+     * på dato + beløp + infotekst, deretter på dato + beløp alene (DNB endret også
+     * tekstformatet da id-ene forsvant). Hver rad pares med høyst én post, så det
+     * aldri adopteres flere enn banken faktisk returnerer.
      *
-     * @return array<string, list<int>>
+     * @param  list<NormalizedTransaction>  $transactions
+     * @param  array<string, int>  $seen
+     * @return array<string, int> external_id → transaksjons-id som skal adopteres
      */
-    private function adoptableRows(int $accountId): array
+    private function adoptions(BankAccount $bankAccount, array $transactions, array $seen): array
     {
-        $rows = [];
+        $candidates = array_filter(
+            $transactions,
+            fn (NormalizedTransaction $t): bool => $t->booked && $t->syntheticId && ! isset($seen[$bankAccount->account_id.':'.$t->externalId]),
+        );
 
-        Transaction::query()
-            ->where('account_id', $accountId)
+        if ($candidates === []) {
+            return [];
+        }
+
+        $rows = Transaction::query()
+            ->where('account_id', $bankAccount->account_id)
             ->where('pending', false)
             ->whereNotNull('external_id')
             ->where('external_id', 'not like', 'eb-hash:%')
+            ->where('date', '>=', min(array_map(fn (NormalizedTransaction $t): string => $t->date, $candidates)))
             ->orderBy('id')
             ->get(['id', 'date', 'amount', 'bank_description'])
-            ->each(function (Transaction $t) use (&$rows): void {
-                $rows[$this->contentKey($t->date, (float) $t->amount, $t->bank_description)][] = $t->id;
-            });
+            ->all();
 
-        return $rows;
-    }
+        $adoptions = [];
 
-    private function contentKey(mixed $date, float $amount, ?string $description): string
-    {
-        return Carbon::parse($date)->toDateString().'|'.number_format($amount, 2, '.', '').'|'.$description;
+        foreach ([true, false] as $matchDescription) {
+            foreach ($candidates as $i => $transaction) {
+                foreach ($rows as $j => $row) {
+                    $matches = $row->date->toDateString() === $transaction->date
+                        && round((float) $row->amount, 2) === round($transaction->amount, 2)
+                        && (! $matchDescription || $row->bank_description === $transaction->description);
+
+                    if ($matches) {
+                        $adoptions[$transaction->externalId] = $row->id;
+                        unset($candidates[$i], $rows[$j]);
+
+                        break;
+                    }
+                }
+            }
+        }
+
+        return $adoptions;
     }
 
     /**
