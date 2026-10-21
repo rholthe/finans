@@ -266,6 +266,9 @@ Blade, utenfor login/SPA) kreves av Enable Banking for prod-app-godkjenning.
   (reserverte churner og slettes uansett hver synk). Egen tabell – ikke SoftDeletes – så slettede rader
   er virkelig borte og de rå `DB::table`/`selectRaw`-aggregatene (budsjett/rapport) forblir korrekte
   uten scope-endringer. Tombstones er permanente (ingen «tillat re-import» i dag).
+  NB: tombstones skrevet før 2026-10-21 for DNB peker på DNBs gamle id-er (se «Poster uten bank-id»
+  under) og virker ikke lenger – en manuell synk med langt vindu henter slike slettede rader inn igjen
+  (typisk bankbenet av en allerede ført planlagt overføring). Rammer kun poster eldre enn 2026-10-21.
 - **Banksynk:** deduplisering per `account_id:external_id` (samme external_id kan gjelde flere
   kontoer). **Poster uten bank-id:** DNB sluttet i oktober 2026 å sende både `entry_reference` og
   `transaction_id` på bokførte poster (tidligere fallback `Str::uuid()` ga en ny dublett ved hver synk).
