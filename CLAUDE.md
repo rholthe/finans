@@ -48,6 +48,13 @@ og **Caddy som reverse proxy** foran:
 - **Nettverk** (alle `external`, opprettet utenfor dette repoet): `reverse-proxy_default`
   (Caddy nås inn hit), `app-backend` (delt MariaDB) og `mailcowdockerized_mailcow-network`
   (sender e-post direkte til mailcow-en på samme vert, ikke via ekstern relay).
+  **Felle ved mailcow-oppdateringer:** må mailcow lage nettverket på nytt (skjedde
+  2026-10-24 da `update.sh` slo på IPv6), stopper `docker compose up` med «network
+  has active endpoints», fordi finans-containerne og Caddy henger i det. Koble dem
+  fra (`docker network disconnect mailcowdockerized_mailcow-network <container>`),
+  start mailcow, og koble til igjen med samme alias
+  (`docker network connect --alias <container> mailcowdockerized_mailcow-network <container>`).
+  Se `~/mailcow-tilpasninger/README.md` på VPS-en.
 - **Reverse proxy:** Caddy terminerer TLS og proxyer til `http://finans-web:80` med
   `X-Forwarded-Proto https`. Appen stoler på proxyen via `trustProxies(at: '*')` i
   `bootstrap/app.php` – uten det blir genererte asset-URL-er `http://` bak https.
