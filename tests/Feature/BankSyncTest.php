@@ -263,6 +263,52 @@ class BankSyncTest extends TestCase
         $this->assertSame('eb-hash:kiwi:1', $kiwi->fresh()->external_id);
     }
 
+    public function test_innholdsavledet_id_adopterer_rad_med_forsvunnet_innholdsavledet_id(): void
+    {
+        // DNB skriver om teksten et døgn etter bokføring, så samme post får ny
+        // hash. Den gamle id-en er borte fra svaret: raden adopteres, med ny tekst.
+        $bankAccount = $this->linkedAccount();
+        $category = Category::factory()->create();
+        $existing = Transaction::create([
+            'account_id' => $bankAccount->account_id,
+            'external_id' => 'eb-hash:gammel:1',
+            'bank_description' => 'Visa 100121, Fresh Fitness As',
+            'category_id' => $category->id,
+            'date' => '2026-11-02',
+            'amount' => -449,
+        ]);
+        $this->provider->transactions['acc1'] = [$this->tx('eb-hash:ny:1', -449, '2026-11-02', 'Visa, Fresh Fitness As', syntheticId: true)];
+
+        $this->assertSame(0, $this->sync()->imported_count);
+        $this->assertDatabaseCount('transactions', 1);
+        $existing->refresh();
+        $this->assertSame('eb-hash:ny:1', $existing->external_id);
+        $this->assertSame('Visa, Fresh Fitness As', $existing->bank_description);
+        $this->assertSame($category->id, $existing->category_id);
+    }
+
+    public function test_innholdsavledet_id_som_fortsatt_er_i_svaret_adopteres_ikke(): void
+    {
+        // To ulike poster med samme dato og beløp: den importerte er fortsatt i
+        // svaret, så den nye er en egen post.
+        $bankAccount = $this->linkedAccount();
+        Transaction::create([
+            'account_id' => $bankAccount->account_id,
+            'external_id' => 'eb-hash:morten:1',
+            'bank_description' => 'Overføring, Morten',
+            'date' => '2026-10-27',
+            'amount' => 924,
+        ]);
+        $this->provider->transactions['acc1'] = [
+            $this->tx('eb-hash:morten:1', 924, '2026-10-27', 'Overføring, Morten', syntheticId: true),
+            $this->tx('eb-hash:haakon:1', 924, '2026-10-27', 'Overføring, Haakon', syntheticId: true),
+        ];
+
+        $this->assertSame(1, $this->sync()->imported_count);
+        $this->assertDatabaseHas('transactions', ['external_id' => 'eb-hash:morten:1']);
+        $this->assertDatabaseHas('transactions', ['external_id' => 'eb-hash:haakon:1']);
+    }
+
     public function test_bankens_egen_id_adopterer_ikke_rader(): void
     {
         // Adopsjon gjelder kun innholdsavledede id-er; en ekte ny bank-id med

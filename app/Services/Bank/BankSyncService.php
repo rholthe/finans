@@ -253,7 +253,10 @@ class BankSyncService
                 }
 
                 if (isset($adoptions[$transaction->externalId])) {
-                    Transaction::whereKey($adoptions[$transaction->externalId])->update(['external_id' => $transaction->externalId]);
+                    Transaction::whereKey($adoptions[$transaction->externalId])->update([
+                        'external_id' => $transaction->externalId,
+                        'bank_description' => $transaction->description,
+                    ]);
                     $seen[$key] = 1;
 
                     continue;
@@ -288,6 +291,12 @@ class BankSyncService
      * tekstformatet da id-ene forsvant). Hver rad pares med høyst én post, så det
      * aldri adopteres flere enn banken faktisk returnerer.
      *
+     * Også rader med innholdsavledet id kan adopteres, men bare når id-en deres ikke
+     * lenger finnes i bankens svar: DNB skriver om teksten (og av og til de
+     * strukturerte feltene) et døgn etter bokføring, så samme post får ny hash.
+     * Forsvinner den gamle id-en samtidig som en ny dukker opp med samme dato og
+     * beløp, er det samme post. Id-er som fortsatt er i svaret er egne poster.
+     *
      * @param  list<NormalizedTransaction>  $transactions
      * @param  array<string, int>  $seen
      * @return array<string, int> external_id → transaksjons-id som skal adopteres
@@ -303,14 +312,16 @@ class BankSyncService
             return [];
         }
 
+        $fetchedIds = array_flip(array_map(fn (NormalizedTransaction $t): string => $t->externalId, $transactions));
+
         $rows = Transaction::query()
             ->where('account_id', $bankAccount->account_id)
             ->where('pending', false)
             ->whereNotNull('external_id')
-            ->where('external_id', 'not like', 'eb-hash:%')
             ->where('date', '>=', min(array_map(fn (NormalizedTransaction $t): string => $t->date, $candidates)))
             ->orderBy('id')
-            ->get(['id', 'date', 'amount', 'bank_description'])
+            ->get(['id', 'external_id', 'date', 'amount', 'bank_description'])
+            ->reject(fn (Transaction $row): bool => str_starts_with($row->external_id, 'eb-hash:') && isset($fetchedIds[$row->external_id]))
             ->all();
 
         $adoptions = [];

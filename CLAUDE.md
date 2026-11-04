@@ -286,6 +286,11 @@ Blade, utenfor login/SPA) kreves av Enable Banking for prod-app-godkjenning.
   kategori/lås beholdes) – det dekker overgangen fra bankens/uuid-id-er. Paringen skjer i to omganger
   (`BankSyncService::adoptions`): først dato + beløp + `bank_description`, så dato + beløp alene, fordi
   DNB samtidig endret tekstformatet (f.eks. `Visa 100321, X` → `Visa, X`); hver rad pares med høyst én post.
+  **DNB skriver dessuten om teksten (og av og til `creditor`/`reference_number`) et døgn etter bokføring**
+  (`Visa 100121, X` → `Visa, X`, `Varekjøp, X, Dato 30.10 kl. 17.17` → `Varekjøp, Kl. 17.17 Versjon 1 Aut. …, X`),
+  så samme post får ny hash. Derfor kan også en rad med `eb-hash`-id adopteres – men kun når id-en dens
+  **ikke lenger er i bankens svar** (en id som fortsatt er i svaret er en egen post med samme dato/beløp).
+  Ved adopsjon oppdateres også `bank_description` til den nye teksten.
   Transaksjonslisten fra Enable Banking er **paginert** (`continuation_key`, også etter tomme sider);
   `getTransactions` følger den til siste side (tak: `MAX_TRANSACTION_PAGES`) – før det dekket lange
   vinduer på store kontoer bare nyeste side (~10 dager på DNB Felleskonto).
