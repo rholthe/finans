@@ -215,7 +215,7 @@ Blade, utenfor login/SPA) kreves av Enable Banking for prod-app-godkjenning.
   **hele** kontoens reserverte sett når vår signerte sum er nøyaktig den negerte (≠ 0) – før reglene
   anvendes, og kun med fersk saldo fra samme synk. Går regnestykket ikke opp (f.eks. blanding av ekte
   innbetaling og speilvendt kjøp) beholdes postene uendret og saldoavvik-varselet slår ut som før.
-  Snuingen logges som en info-linje i synk-rapporten.
+  Snuingen logges som en info-linje i synk-rapporten. Innført 2026-11-07 (tidligere bevisst ikke rettet).
 - **Banksaldo fra banken:** ved hver synk hentes også kontoens saldo fra banken (`BankDataProvider::
   getBalances` → `BankBalance`-DTO med `booked` = kun bokført og `available` = inkl. reservert; signert,
   negativ = gjeld). Bankene oppgir flere `balanceType`/`balance_type`-er som normaliseres via en
