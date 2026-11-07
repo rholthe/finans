@@ -220,7 +220,8 @@ class BankSyncService
         }
 
         $this->storeRateLimit($provider, $bankAccount);
-        $this->storeBalance($provider, $bankAccount);
+        $balance = $this->storeBalance($provider, $bankAccount);
+        $transactions = $this->correctPendingSigns($bankAccount, $transactions, $balance);
 
         // Reserverte (PEND) poster mangler stabil external_id og endrer seg
         // mellom synk-er, så de dedup'es ikke på id. I stedet erstattes kontoens
@@ -347,6 +348,62 @@ class BankSyncService
     }
 
     /**
+     * Snu fortegnet på kontoens reserverte poster når bankens egen saldo viser at
+     * de har kommet inn speilvendt. DNB stempler alle reserverte med
+     * `credit_debit_indicator: CRDT`, også rene kortkjøp, og de strukturerte
+     * feltene er tomme, så retningen kan ikke avgjøres per post. Bankens
+     * `available − booked` er derimot summen av de reserverte slik banken ser dem:
+     * er vår signerte sum nøyaktig den negerte (og ikke null), er hele settet snudd.
+     *
+     * Kun hele settet snus. Er det en blanding av ekte inn- og utbetalinger går
+     * regnestykket ikke opp, og postene beholdes uendret (heller et synlig
+     * saldoavvik enn en gjetning). Krever fersk saldo fra denne synken.
+     *
+     * @param  list<NormalizedTransaction>  $transactions
+     * @return list<NormalizedTransaction>
+     */
+    private function correctPendingSigns(BankAccount $bankAccount, array $transactions, ?BankBalance $balance): array
+    {
+        if ($balance?->booked === null || $balance->available === null) {
+            return $transactions;
+        }
+
+        $pendingSum = round(array_sum(array_map(
+            fn (NormalizedTransaction $t): float => $t->booked ? 0.0 : $t->amount,
+            $transactions,
+        )), 2);
+        $bankPendingSum = round($balance->available - $balance->booked, 2);
+
+        $isMirrored = abs($pendingSum) >= Account::BALANCE_MISMATCH_THRESHOLD
+            && abs($pendingSum + $bankPendingSum) < Account::BALANCE_MISMATCH_THRESHOLD;
+
+        if (! $isMirrored) {
+            return $transactions;
+        }
+
+        $this->line('info', __('Snudde fortegnet på reserverte poster for konto :iban (banken oppgir :bank reservert).', [
+            'iban' => $bankAccount->displayName(),
+            'bank' => $this->money($bankPendingSum),
+        ]));
+
+        return array_map(
+            fn (NormalizedTransaction $t): NormalizedTransaction => $t->booked ? $t : new NormalizedTransaction(
+                externalId: $t->externalId,
+                date: $t->date,
+                amount: -$t->amount,
+                currency: $t->currency,
+                description: $t->description,
+                payee: $t->payee,
+                memo: $t->memo,
+                booked: false,
+                raw: $t->raw,
+                syntheticId: $t->syntheticId,
+            ),
+            $transactions,
+        );
+    }
+
+    /**
      * Opprett en transaksjon fra en normalisert bankpost. Bokførte er klarert
      * (teller i avstemming); reserverte er pending=true / cleared=false.
      */
@@ -430,9 +487,9 @@ class BankSyncService
     /**
      * Hent og lagre bankens egen saldo (bokført + inkl. reservert). Saldo er
      * sekundært til transaksjonene, så en feil her logges som advarsel uten å
-     * markere hele synken som feilet.
+     * markere hele synken som feilet. Returnerer saldoen, eller null ved feil.
      */
-    private function storeBalance(BankDataProvider $provider, BankAccount $bankAccount): void
+    private function storeBalance(BankDataProvider $provider, BankAccount $bankAccount): ?BankBalance
     {
         try {
             $balance = $provider->getBalances($bankAccount->external_id);
@@ -442,7 +499,7 @@ class BankSyncService
                 'error' => $e->getMessage(),
             ]));
 
-            return;
+            return null;
         }
 
         $bankAccount->update([
@@ -450,6 +507,8 @@ class BankSyncService
             'balance_available' => $balance->available,
             'balance_synced_at' => now(),
         ]);
+
+        return $balance;
     }
 
     /**

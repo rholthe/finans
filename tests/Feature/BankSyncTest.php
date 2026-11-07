@@ -509,6 +509,87 @@ class BankSyncTest extends TestCase
         );
     }
 
+    public function test_speilvendte_reserverte_snus_naar_bankens_saldo_viser_det(): void
+    {
+        $bankAccount = $this->linkedAccount();
+        // DNB-feilen: kortkjøp på -50 og -30 kommer inn som +50 og +30. Banken selv
+        // sier available − booked = -80, altså nøyaktig den negerte summen.
+        $this->provider->transactions['acc1'] = [
+            $this->tx('b1', -100),
+            $this->tx('p1', 50, booked: false),
+            $this->tx('p2', 30, booked: false),
+        ];
+        $this->provider->balances['acc1'] = new BankBalance(booked: -100.0, available: -180.0, currency: 'NOK');
+
+        $event = $this->sync();
+
+        $this->assertSame(-100.0, (float) Transaction::where('external_id', 'b1')->value('amount'));
+        $this->assertSame(-50.0, (float) Transaction::where('external_id', 'p1')->value('amount'));
+        $this->assertSame(-30.0, (float) Transaction::where('external_id', 'p2')->value('amount'));
+
+        $report = collect($event->report);
+        $this->assertTrue($report->contains(fn (array $line): bool => str_contains($line['message'], 'Snudde fortegnet')));
+        $this->assertFalse($report->contains(fn (array $line): bool => str_contains($line['message'], 'Saldoavvik')));
+        $this->assertNull($bankAccount->account->bankBalanceMismatch((float) Transaction::where('account_id', $bankAccount->account_id)->sum('amount')));
+    }
+
+    public function test_reserverte_med_riktig_fortegn_beholdes(): void
+    {
+        $this->linkedAccount();
+        $this->provider->transactions['acc1'] = [$this->tx('p1', -50, booked: false)];
+        $this->provider->balances['acc1'] = new BankBalance(booked: 200.0, available: 150.0, currency: 'NOK');
+
+        $event = $this->sync();
+
+        $this->assertSame(-50.0, (float) Transaction::where('external_id', 'p1')->value('amount'));
+        $this->assertFalse(collect($event->report)->contains(fn (array $line): bool => str_contains($line['message'], 'Snudde fortegnet')));
+    }
+
+    public function test_blanding_av_reserverte_som_ikke_gaar_opp_snus_ikke(): void
+    {
+        $this->linkedAccount();
+        // Et speilvendt kortkjøp (-50 → +50) og en ekte innbetaling (+20): banken
+        // sier -30 reservert. Å snu hele settet gir -70 ≠ -30, så ingenting snus.
+        $this->provider->transactions['acc1'] = [
+            $this->tx('p1', 50, booked: false),
+            $this->tx('p2', 20, booked: false),
+        ];
+        $this->provider->balances['acc1'] = new BankBalance(booked: 0.0, available: -30.0, currency: 'NOK');
+
+        $this->sync();
+
+        $this->assertSame(50.0, (float) Transaction::where('external_id', 'p1')->value('amount'));
+        $this->assertSame(20.0, (float) Transaction::where('external_id', 'p2')->value('amount'));
+    }
+
+    public function test_reserverte_snus_ikke_uten_bankens_saldo(): void
+    {
+        $this->linkedAccount();
+        $this->provider->transactions['acc1'] = [$this->tx('p1', 50, booked: false)];
+        $this->provider->balances['acc1'] = new BankBalance(booked: -100.0, available: null);
+
+        $this->sync();
+
+        $this->assertSame(50.0, (float) Transaction::where('external_id', 'p1')->value('amount'));
+    }
+
+    public function test_regler_ser_korrigert_fortegn_paa_reserverte(): void
+    {
+        $this->linkedAccount();
+        $category = Category::factory()->create();
+        Rule::create([
+            'match_contains' => 'Butikk',
+            'applies_to' => 'outflow',
+            'category_id' => $category->id,
+        ]);
+        $this->provider->transactions['acc1'] = [$this->tx('p1', 50, booked: false)];
+        $this->provider->balances['acc1'] = new BankBalance(booked: 0.0, available: -50.0, currency: 'NOK');
+
+        $this->sync();
+
+        $this->assertSame($category->id, Transaction::where('external_id', 'p1')->value('category_id'));
+    }
+
     public function test_rate_limit_429_markerer_konto_ikke_synkbar(): void
     {
         $bankAccount = $this->linkedAccount();
