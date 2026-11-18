@@ -286,6 +286,46 @@ class EnableBankingProviderTest extends TestCase
         Http::assertSent(fn ($request) => str_contains($request->url(), 'continuation_key=side-3') && str_contains($request->url(), 'date_from=2026-09-21'));
     }
 
+    public function test_entry_reference_som_er_kontonummer_brukes_ikke_som_id(): void
+    {
+        // Bulder (2026): utgående betalinger har entry_reference = mottakerens
+        // kontonummer, så hver månedlige betaling til samme konto fikk samme id.
+        $payment = fn (string $date): array => [
+            'entry_reference' => '36210992078',
+            'transaction_id' => null,
+            'booking_date' => $date,
+            'value_date' => $date,
+            'transaction_amount' => ['amount' => '21467.00', 'currency' => 'NOK'],
+            'credit_debit_indicator' => 'DBIT',
+            'status' => 'BOOK',
+            'creditor_account' => ['iban' => null, 'other' => ['identification' => '36210992078', 'scheme_name' => 'BBAN']],
+            'debtor_account' => ['iban' => null, 'other' => ['identification' => '36105202142', 'scheme_name' => 'BBAN']],
+            'remittance_information' => ['Til:36210992078'],
+        ];
+        $incoming = [
+            'entry_reference' => '5762',
+            'booking_date' => '2026-11-09',
+            'transaction_amount' => ['amount' => '21000.00', 'currency' => 'NOK'],
+            'credit_debit_indicator' => 'CRDT',
+            'status' => 'BOOK',
+            'creditor_account' => ['iban' => null, 'other' => ['identification' => '36105202142', 'scheme_name' => 'BBAN']],
+        ];
+
+        Http::fake([
+            'eb.test/accounts/acc-1/transactions*' => Http::response(['transactions' => [$payment('2026-11-16'), $incoming, $payment('2026-10-15')]]),
+        ]);
+
+        $result = (new EnableBankingProvider)->getTransactions('acc-1', 'Bulder', '2026-10-01');
+
+        $this->assertStringStartsWith('eb-hash:', $result[0]->externalId);
+        $this->assertTrue($result[0]->syntheticId);
+        $this->assertStringStartsWith('eb-hash:', $result[2]->externalId);
+        $this->assertNotSame($result[0]->externalId, $result[2]->externalId);
+        // En ekte løpenummer-referanse beholdes.
+        $this->assertSame('5762', $result[1]->externalId);
+        $this->assertFalse($result[1]->syntheticId);
+    }
+
     public function test_bankens_egen_id_brukes_naar_den_finnes(): void
     {
         Http::fake([

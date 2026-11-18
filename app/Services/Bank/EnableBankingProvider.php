@@ -282,7 +282,7 @@ class EnableBankingProvider implements BankDataProvider
      */
     private function normalize(array $raw, array &$occurrences): NormalizedTransaction
     {
-        $bankId = $raw['entry_reference'] ?? $raw['transaction_id'] ?? null;
+        $bankId = $this->bankId($raw);
 
         $amount = (float) data_get($raw, 'transaction_amount.amount', 0);
         if (strtoupper((string) ($raw['credit_debit_indicator'] ?? 'DBIT')) === 'DBIT') {
@@ -295,7 +295,7 @@ class EnableBankingProvider implements BankDataProvider
         $payee = $this->resolvePayee($raw) ?? Str::limit($info, 255, '');
 
         return new NormalizedTransaction(
-            externalId: $bankId !== null ? (string) $bankId : $this->contentId($raw, $occurrences),
+            externalId: $bankId ?? $this->contentId($raw, $occurrences),
             date: $this->resolveDate($raw),
             amount: $amount,
             currency: (string) data_get($raw, 'transaction_amount.currency', 'NOK'),
@@ -306,6 +306,36 @@ class EnableBankingProvider implements BankDataProvider
             raw: $raw,
             syntheticId: $bankId === null,
         );
+    }
+
+    /**
+     * Bankens egen id for posten, eller null når den mangler eller ikke er unik.
+     * Bulder setter `entry_reference` på utgående betalinger til mottakerens
+     * kontonummer (`Til:<konto>`), så alle betalinger til samme konto får samme
+     * «id» – den første ble importert (eller slettet → tombstone) og alle senere
+     * forkastet som duplikater. En referanse som bare er et kontonummer fra
+     * posten selv regnes derfor ikke som id; da brukes innholds-id-en i stedet.
+     *
+     * @param  array<string, mixed>  $raw
+     */
+    private function bankId(array $raw): ?string
+    {
+        $accountNumbers = array_filter([
+            data_get($raw, 'creditor_account.iban'),
+            data_get($raw, 'creditor_account.other.identification'),
+            data_get($raw, 'debtor_account.iban'),
+            data_get($raw, 'debtor_account.other.identification'),
+        ], fn ($value): bool => $value !== null && $value !== '');
+
+        foreach (['entry_reference', 'transaction_id'] as $field) {
+            $value = $raw[$field] ?? null;
+
+            if ($value !== null && $value !== '' && ! in_array((string) $value, array_map('strval', $accountNumbers), true)) {
+                return (string) $value;
+            }
+        }
+
+        return null;
     }
 
     /**

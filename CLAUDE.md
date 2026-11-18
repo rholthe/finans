@@ -280,7 +280,10 @@ Blade, utenfor login/SPA) kreves av Enable Banking for prod-app-godkjenning.
   `transaction_id` på bokførte poster (tidligere fallback `Str::uuid()` ga en ny dublett ved hver synk).
   `EnableBankingProvider` lager derfor en deterministisk `eb-hash:<sha1>:<løpenr>`-id av innholdet
   (status, datoer, beløp, retning, meldingstekst, motpart) med løpenummer for helt like poster i samme
-  henting, og flagger `NormalizedTransaction::$syntheticId`. En slik id som ikke er sett før **adopterer**
+  henting, og flagger `NormalizedTransaction::$syntheticId`. Samme fallback brukes når
+  `entry_reference`/`transaction_id` bare er et kontonummer fra posten selv (`EnableBankingProvider::bankId`):
+  **Bulder** setter `entry_reference` = mottakerens kontonummer på utgående betalinger (`Til:<konto>`), så alle
+  betalinger til samme konto fikk samme id og ble forkastet som duplikater etter den første (rettet 2026-11-18). En slik id som ikke er sett før **adopterer**
   en eksisterende bokført rad (uten `eb-hash`-id) på kontoen i stedet for å lage en ny (id-en skrives om,
   kategori/lås beholdes) – det dekker overgangen fra bankens/uuid-id-er. Paringen skjer i to omganger
   (`BankSyncService::adoptions`): først dato + beløp + `bank_description`, så dato + beløp alene, fordi
