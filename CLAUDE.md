@@ -104,6 +104,7 @@ Blade, utenfor login/SPA) kreves av Enable Banking for prod-app-godkjenning.
 ## Struktur
 
 - `routes/web.php` — `/api/*`-ruter + SPA catch-all
+- `routes/assistent.php` — lese-API for den personlige assistenten (`/api/assistent/*`, se under)
 - `routes/console.php` — scheduler (nattlig banksynk-jobb + `transactions:post-due` + `loans:post-interest`)
 - `app/Http/Controllers/` — Auth, Account, Transaction, Transfer, Reconciliation, Report, Budget,
   Category, CategoryGroup, Goal, ScheduledTransaction, Bank, Rule, Settings, Loan
@@ -334,6 +335,29 @@ Blade, utenfor login/SPA) kreves av Enable Banking for prod-app-godkjenning.
   overvåkede/synkede ekskluderes), dato forvalgt til i dag, obligatorisk mottaker + beløp (retning
   Utgift/Inntekt → fortegn), valgfritt notat, og en bekreftelses-modal før lagring. Lager en
   ukategorisert transaksjon (kategoriseres senere på desktop). Vises ikke på stor skjerm.
+
+## Assistent-API (lese-API for Munin, 23. nov 2026)
+
+Den personlige assistenten (Munin, `assistent.holthe.org`, repo `holthe-mcp-server`) leser
+husholdningsbudsjettet for Ragnar og Maiken via `/api/assistent/*` – **bare lesing**.
+
+- **Ruter:** `routes/assistent.php`, registrert i `bootstrap/app.php` (`then:`) **utenfor web-gruppen**
+  (ingen session/CSRF) bak `AssistantToken` → `SubstituteBindings` → `EnsureScheduledTransactionsPosted`.
+  Postering av forfalte planlagte transaksjoner ved lesing er bevisst (samme som når appen åpnes).
+- **Nøkkel:** `ASSISTENT_API_TOKEN` (→ `config('services.assistent.token')`), `Authorization: Bearer`.
+  Tom nøkkel = alt stengt (401). `AssistantToken` slipper bare GET gjennom; nøkkelen gir ingen tilgang
+  til appens vanlige `/api/*` (de krever fortsatt økten). Assistentens `.env` har samme verdi som
+  `FINANS_API_TOKEN`.
+- **Nett:** assistenten kaller `http://finans-web` over `reverse-proxy_default`. Har forespørselen gått
+  via Caddy (`X-Forwarded-For`/`-Proto`), avviser `AssistantToken` den med 403 selv med riktig nøkkel
+  (samme sperre som trening-dashboardet) – ingen egen regel i Caddyfile.
+- **Endepunkter** (`AssistantController`, kompakte svar uten id-er, kontonumre eller samtykke-id-er –
+  svarene går til en språkmodell): `overview`, `budget?month=&category=`, `transactions?q=&from=&to=
+  &min_amount=&max_amount=&account=&category=&uncategorized=&limit=` (≤ 200, kategori treffer også
+  splittlinjer), `reports/{spending|income-expense|category-trend|net-worth}?from=&to=&category=`,
+  `upcoming?days=` (≤ 90), `loans?basis=`. Tallene kommer fra `BudgetService`/`ReportService`/
+  `LoanService`, så de er de samme som i appen.
+- **Endres et svarformat**, må `finance.js` i assistenten følge med. Tester: `tests/Feature/AssistantApiTest.php`.
 
 ## Faseplan
 
